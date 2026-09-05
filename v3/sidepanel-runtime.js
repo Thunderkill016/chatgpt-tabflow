@@ -30,6 +30,62 @@ function showRuntimeToast(message) {
   setTimeout(() => toast.classList.remove('show'), 2600);
 }
 
+function ensureRuntimeBanner() {
+  let banner = document.getElementById('runtime-banner');
+  if (banner) return banner;
+  const actions = document.querySelector('.actions-bar');
+  if (!actions?.parentNode) return null;
+  banner = document.createElement('section');
+  banner.id = 'runtime-banner';
+  banner.className = 'runtime-banner';
+
+  const icon = document.createElement('div');
+  icon.className = 'runtime-banner-icon';
+  icon.textContent = '⚙';
+
+  const copy = document.createElement('div');
+  copy.className = 'runtime-banner-copy';
+  const title = document.createElement('div');
+  title.id = 'runtime-banner-title';
+  title.className = 'runtime-banner-title';
+  title.textContent = 'Co-op Runtime đang khởi tạo…';
+  const sub = document.createElement('div');
+  sub.id = 'runtime-banner-sub';
+  sub.className = 'runtime-banner-sub';
+  sub.textContent = 'Đang đọc trạng thái 3 tab ChatGPT';
+  copy.append(title, sub);
+
+  const open = document.createElement('button');
+  open.type = 'button';
+  open.className = 'runtime-banner-open';
+  open.textContent = 'Mở Co-op';
+  open.addEventListener('click', () => showRuntimeView());
+
+  banner.append(icon, copy, open);
+  actions.parentNode.insertBefore(banner, actions.nextSibling);
+  return banner;
+}
+
+function updateRuntimeBanner(snapshot = {}, settings = {}, chromeTabs = []) {
+  const banner = ensureRuntimeBanner();
+  if (!banner) return;
+  const title = document.getElementById('runtime-banner-title');
+  const sub = document.getElementById('runtime-banner-sub');
+  const entries = Object.values(snapshot.tabs || {});
+  const generating = Number(snapshot.generatingCount || 0);
+  const protectedCount = entries.filter(entry => entry.state === 'typing' || entry.state === 'generating' || Number(entry.protectUntil || 0) > Date.now()).length;
+  const pressure = snapshot.memory?.level || 'unknown';
+  const budget = Number(snapshot.parallelBudget || 1);
+  const liveTabs = chromeTabs.filter(tab => !tab.discarded).length;
+  const projectName = settings.projectName || entries.find(entry => entry.projectName)?.projectName || '';
+
+  banner.className = `runtime-banner pressure-${pressure}`;
+  if (title) title.textContent = projectName ? `Co-op · ${projectName}` : 'Co-op Runtime · chưa gắn project';
+  if (sub) {
+    sub.textContent = `${chromeTabs.length} tabs · ${liveTabs} live · ${generating} generating · ${protectedCount} protected · ${pressure.toUpperCase()} · budget ${budget}`;
+  }
+}
+
 function connectMemory() {
   if (memoryPort) return memoryPort;
   const port = chrome.runtime.connect({ name: 'TABFLOW_MEMORY_CLIENT' });
@@ -180,7 +236,6 @@ function renderAgents(snapshot, chromeTabs) {
 }
 
 async function refreshRuntime() {
-  if (!runtimeView || runtimeView.style.display === 'none') return;
   const [runtime, tabsData] = await Promise.all([
     chrome.runtime.sendMessage({ type: 'RUNTIME_GET_STATE' }),
     chrome.runtime.sendMessage({ type: 'GET_TABS_DATA' })
@@ -189,6 +244,11 @@ async function refreshRuntime() {
 
   const snapshot = runtime.snapshot || { tabs: {} };
   const settings = runtime.settings || {};
+  const tabs = tabsData.tabs || [];
+  updateRuntimeBanner(snapshot, settings, tabs);
+
+  if (!runtimeView || runtimeView.style.display === 'none') return;
+
   const pressure = pressureText(snapshot.memory);
   pressureLabel.textContent = pressure.label;
   pressureLabel.className = pressure.className;
@@ -203,7 +263,7 @@ async function refreshRuntime() {
   if (settings.projectId && [...projectSelect.options].some(option => option.value === settings.projectId)) {
     projectSelect.value = settings.projectId;
   }
-  renderAgents(snapshot, tabsData.tabs || []);
+  renderAgents(snapshot, tabs);
 }
 
 async function startCooperativeWorkspace() {
@@ -274,6 +334,7 @@ function hideRuntimeView() {
   if (runtimeView) runtimeView.style.display = 'none';
 }
 
+ensureRuntimeBanner();
 runtimeNav?.addEventListener('click', showRuntimeView);
 for (const id of ['tab-nav-active', 'tab-nav-stashed', 'tab-nav-projects', 'tab-nav-memory']) {
   document.getElementById(id)?.addEventListener('click', hideRuntimeView);
@@ -304,7 +365,8 @@ chrome.storage.onChanged.addListener(changes => {
 });
 
 loadProjects().catch(() => {});
-refreshTimer = setInterval(() => refreshRuntime().catch(() => {}), 2500);
+refreshRuntime().catch(() => {});
+refreshTimer = setInterval(() => refreshRuntime().catch(() => {}), 5000);
 window.addEventListener('unload', () => {
   if (refreshTimer) clearInterval(refreshTimer);
 });
