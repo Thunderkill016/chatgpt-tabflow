@@ -1,488 +1,406 @@
-/**
- * ChatGPT TabFlow - Multi-Chat Coding Hub Controller
- * Manages split grid layout, embedded ChatGPT sessions, and multi-file Code Scratchpad.
- */
+import { computeGrid, densityWarning } from './layout.js';
 
-(() => {
-  'use strict';
+const WORKSPACE_STATE_KEY = 'workspaceUnifiedStateV1';
+const CHATGPT_ORIGINS = new Set(['https://chatgpt.com', 'https://chat.openai.com']);
+const DEFAULT_CHAT_URL = 'https://chatgpt.com/';
 
-  // State
-  let panes = [
-    { id: 1, title: 'Frontend / UI', url: 'https://chatgpt.com/' },
-    { id: 2, title: 'Backend / API', url: 'https://chatgpt.com/' }
-  ];
+const chatGrid = document.getElementById('chat-grid');
+const paneTemplate = document.getElementById('pane-template');
+const emptyState = document.getElementById('empty-state');
+const btnSyncTabs = document.getElementById('btn-sync-tabs');
+const btnNewChat = document.getElementById('btn-new-chat');
+const btnEmptyNewChat = document.getElementById('btn-empty-new-chat');
+const btnTakeover = document.getElementById('btn-takeover');
+const densitySelect = document.getElementById('density-select');
+const workspaceSummary = document.getElementById('workspace-summary');
+const statPanes = document.getElementById('stat-panes');
+const statSources = document.getElementById('stat-sources');
+const statSleeping = document.getElementById('stat-sleeping');
+const statReady = document.getElementById('stat-ready');
+const densityWarningEl = document.getElementById('density-warning');
+const toastEl = document.getElementById('workspace-toast');
 
-  let currentLayout = '2-col'; // '2-col' | '3-col' | '4-grid'
-  let isScratchpadOpen = true;
+let panes = [];
+let sourceTabs = new Map();
+let focusedPaneId = null;
+let density = 'auto';
+let paneSequence = 0;
+let saveTimer = null;
+let toastTimer = null;
+let syncTimer = null;
+let resizeTimer = null;
+const frameByPaneId = new Map();
+const paneIdByWindow = new Map();
+const readyPanes = new Set();
 
-  const DEFAULT_FILES = [
-    {
-      name: 'app.js',
-      content: '// ChatGPT TabFlow - Code Scratchpad\n// Viết code hoặc dán code từ các chat vào đây để chỉnh sửa tập trung.\n\nfunction calculateMetrics(items) {\n  return items.reduce((acc, item) => acc + item.value, 0);\n}\n\nconsole.log("Ready to code!");'
-    },
-    {
-      name: 'server.py',
-      content: '# Backend API Controller\nfrom fastapi import FastAPI\n\napp = FastAPI(title="ChatGPT TabFlow API")\n\n@app.get("/health")\ndef health_check():\n    return {"status": "healthy", "engine": "TabFlow"}'
-    },
-    {
-      name: 'schema.sql',
-      content: '-- Database Schema\nCREATE TABLE IF NOT EXISTS users (\n  id SERIAL PRIMARY KEY,\n  email VARCHAR(255) UNIQUE NOT NULL,\n  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP\n);'
-    }
-  ];
-
-  let files = [...DEFAULT_FILES];
-  let activeFileIndex = 0;
-  let saveTimer = null;
-
-  // DOM Elements
-  const chatGrid = document.getElementById('chat-grid');
-  const btnLayout2 = document.getElementById('btn-layout-2');
-  const btnLayout3 = document.getElementById('btn-layout-3');
-  const btnLayout4 = document.getElementById('btn-layout-4');
-  const btnAddPane = document.getElementById('btn-add-pane');
-  const btnTileWindows = document.getElementById('btn-tile-windows');
-  const btnToggleScratchpad = document.getElementById('btn-toggle-scratchpad');
-
-  const scratchpadPanel = document.getElementById('scratchpad-panel');
-  const fileTabsBar = document.getElementById('file-tabs-bar');
-  const btnNewFile = document.getElementById('btn-new-file');
-  const codeTextarea = document.getElementById('code-textarea');
-  const lineNumbers = document.getElementById('line-numbers');
-
-  const btnCopyCode = document.getElementById('btn-copy-code');
-  const btnDownloadCode = document.getElementById('btn-download-code');
-  const btnClearCode = document.getElementById('btn-clear-code');
-  const btnSendToPane1 = document.getElementById('btn-send-to-pane-1');
-  const btnSendToPane2 = document.getElementById('btn-send-to-pane-2');
-
-  const toastEl = document.getElementById('workspace-toast');
-  let toastTimer = null;
-
-  function showToast(msg) {
-    if (toastTimer) clearTimeout(toastTimer);
-    toastEl.textContent = msg;
-    toastEl.classList.add('show');
-    toastTimer = setTimeout(() => {
-      toastEl.classList.remove('show');
-    }, 2800);
+function safeUrl(url) {
+  try {
+    const parsed = new URL(url);
+    return CHATGPT_ORIGINS.has(parsed.origin) ? parsed.href : DEFAULT_CHAT_URL;
+  } catch {
+    return DEFAULT_CHAT_URL;
   }
+}
 
-  // ================= 1. CHAT GRID & PANE MANAGEMENT =================
+function makePaneId(prefix = 'pane') {
+  paneSequence += 1;
+  return `${prefix}-${Date.now()}-${paneSequence}`;
+}
 
-  function renderPanes() {
-    chatGrid.innerHTML = '';
+function cleanTitle(title, fallback = 'ChatGPT') {
+  const value = String(title || '').replace(/\s+-\s+ChatGPT$/i, '').trim();
+  return (value || fallback).slice(0, 240);
+}
 
-    for (let i = 0; i < panes.length; i++) {
-      const pane = panes[i];
-      const paneEl = document.createElement('section');
-      paneEl.className = 'chat-pane';
-      paneEl.dataset.paneId = pane.id;
+function showToast(message) {
+  if (toastTimer) clearTimeout(toastTimer);
+  toastEl.textContent = message;
+  toastEl.classList.add('show');
+  toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2800);
+}
 
-      paneEl.innerHTML = `
-        <div class="pane-header">
-          <div class="pane-info">
-            <span class="pane-badge">Chat ${i + 1}</span>
-            <input type="text" class="pane-title-input" value="${escapeHtml(pane.title)}" title="Nhấp để đổi tên tab chat">
-          </div>
-          <div class="pane-tools">
-            <button class="pane-btn btn-open-external" title="Mở tab này ra cửa sổ Chrome riêng">↗️</button>
-            <button class="pane-btn btn-reload-pane" title="Tải lại khung chat này">🔄</button>
-            ${panes.length > 1 ? `<button class="pane-btn danger btn-close-pane" title="Đóng khung chat này">✕</button>` : ''}
-          </div>
-        </div>
-        <div class="pane-body">
-          <div class="pane-loading">
-            <div class="spinner"></div>
-            <span>Đang tải ChatGPT...</span>
-          </div>
-          <iframe src="${pane.url}" allow="clipboard-read; clipboard-write" title="ChatGPT Session ${i + 1}"></iframe>
-        </div>
-      `;
-
-      const iframe = paneEl.querySelector('iframe');
-      const loader = paneEl.querySelector('.pane-loading');
-      const titleInput = paneEl.querySelector('.pane-title-input');
-      const reloadBtn = paneEl.querySelector('.btn-reload-pane');
-      const externalBtn = paneEl.querySelector('.btn-open-external');
-      const closeBtn = paneEl.querySelector('.btn-close-pane');
-
-      // Hide loading spinner on load
-      iframe.addEventListener('load', () => {
-        loader.classList.add('hidden');
-      });
-
-      // Update pane title
-      titleInput.addEventListener('change', (e) => {
-        pane.title = e.target.value.trim() || `Chat ${i + 1}`;
-        saveWorkspaceState();
-      });
-
-      // Reload iframe
-      reloadBtn.addEventListener('click', () => {
-        loader.classList.remove('hidden');
-        iframe.src = pane.url;
-      });
-
-      // Open in standard tab
-      externalBtn.addEventListener('click', () => {
-        chrome.tabs.create({ url: pane.url });
-      });
-
-      // Close pane
-      if (closeBtn) {
-        closeBtn.addEventListener('click', () => {
-          removePane(pane.id);
-        });
+function scheduleSave() {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => {
+    await chrome.storage.local.set({
+      [WORKSPACE_STATE_KEY]: {
+        density,
+        panes: panes.map(({ id, sourceTabId, title, url, createdAt }) => ({
+          id,
+          sourceTabId: Number.isInteger(sourceTabId) ? sourceTabId : null,
+          title,
+          url,
+          createdAt
+        }))
       }
+    });
+  }, 250);
+}
 
-      chatGrid.appendChild(paneEl);
-    }
+async function loadSavedState() {
+  const stored = await chrome.storage.local.get(WORKSPACE_STATE_KEY);
+  const state = stored[WORKSPACE_STATE_KEY];
+  if (!state || typeof state !== 'object') return;
+  if (typeof state.density === 'string') density = state.density;
+  if (Array.isArray(state.panes)) {
+    panes = state.panes
+      .filter(item => item && typeof item === 'object')
+      .map(item => ({
+        id: String(item.id || makePaneId('restored')).slice(0, 200),
+        sourceTabId: Number.isInteger(item.sourceTabId) ? item.sourceTabId : null,
+        title: cleanTitle(item.title),
+        url: safeUrl(item.url),
+        createdAt: Number(item.createdAt || Date.now())
+      }));
   }
+  if ([...densitySelect.options].some(option => option.value === density)) {
+    densitySelect.value = density;
+  }
+}
 
-  function addPane() {
-    if (panes.length >= 4) {
-      showToast('Tối đa 4 khung chat song song để đảm bảo tốc độ mượt mà!');
-      return;
-    }
+async function getOpenChatTabs() {
+  const result = await chrome.runtime.sendMessage({ type: 'GET_TABS_DATA' });
+  if (!result?.success) throw new Error(result?.error || 'Không đọc được danh sách ChatGPT tab');
+  return Array.isArray(result.tabs) ? result.tabs : [];
+}
 
-    const nextId = Date.now();
-    const titles = ['Database / SQL', 'Debug & Test', 'Tài liệu / Docs', 'Khung bổ trợ'];
-    const title = titles[panes.length - 2] || `Chat ${panes.length + 1}`;
+function mergeOpenTabs(tabs) {
+  sourceTabs = new Map(tabs.filter(tab => Number.isInteger(tab.id)).map(tab => [tab.id, tab]));
+  const existingSourceIds = new Set(panes.map(pane => pane.sourceTabId).filter(Number.isInteger));
+  let added = 0;
 
+  for (const tab of tabs) {
+    if (!Number.isInteger(tab.id) || existingSourceIds.has(tab.id)) continue;
     panes.push({
-      id: nextId,
-      title,
-      url: 'https://chatgpt.com/'
+      id: makePaneId('tab'),
+      sourceTabId: tab.id,
+      title: cleanTitle(tab.title, `Chat ${panes.length + 1}`),
+      url: safeUrl(tab.url),
+      createdAt: Date.now()
     });
-
-    if (panes.length === 3) setLayout('3-col');
-    else if (panes.length === 4) setLayout('4-grid');
-    else renderPanes();
-
-    saveWorkspaceState();
-    showToast(`Đã thêm khung Chat ${panes.length}`);
+    existingSourceIds.add(tab.id);
+    added += 1;
   }
 
-  function removePane(paneId) {
-    if (panes.length <= 1) return;
-    panes = panes.filter(p => p.id !== paneId);
-
-    if (panes.length === 2 && currentLayout === '3-col') {
-      setLayout('2-col');
-    } else {
-      renderPanes();
-    }
-
-    saveWorkspaceState();
+  for (const pane of panes) {
+    if (!Number.isInteger(pane.sourceTabId)) continue;
+    const tab = sourceTabs.get(pane.sourceTabId);
+    if (!tab) continue;
+    if (tab.title) pane.title = cleanTitle(tab.title, pane.title);
+    if (tab.url && !readyPanes.has(pane.id)) pane.url = safeUrl(tab.url);
   }
 
-  function setLayout(layout) {
-    currentLayout = layout;
-    chatGrid.className = 'chat-grid';
+  return added;
+}
 
-    btnLayout2.classList.remove('active');
-    btnLayout3.classList.remove('active');
-    btnLayout4.classList.remove('active');
-
-    if (layout === '2-col') {
-      chatGrid.classList.add('layout-2-col');
-      btnLayout2.classList.add('active');
-      if (panes.length > 2) panes = panes.slice(0, 2);
-    } else if (layout === '3-col') {
-      chatGrid.classList.add('layout-3-col');
-      btnLayout3.classList.add('active');
-      while (panes.length < 3) {
-        panes.push({ id: Date.now() + panes.length, title: `Chat ${panes.length + 1}`, url: 'https://chatgpt.com/' });
-      }
-    } else if (layout === '4-grid') {
-      chatGrid.classList.add('layout-4-grid');
-      btnLayout4.classList.add('active');
-      while (panes.length < 4) {
-        panes.push({ id: Date.now() + panes.length, title: `Chat ${panes.length + 1}`, url: 'https://chatgpt.com/' });
-      }
-    }
-
-    renderPanes();
-    saveWorkspaceState();
+async function syncOpenTabs({ notify = false } = {}) {
+  try {
+    const tabs = await getOpenChatTabs();
+    const added = mergeOpenTabs(tabs);
+    renderWorkspace();
+    scheduleSave();
+    if (notify) showToast(added > 0 ? `Đã thêm ${added} tab mới vào workspace.` : 'Workspace đã đồng bộ với các tab đang mở.');
+  } catch (error) {
+    console.warn('[TabFlow Workspace] Sync failed:', error);
+    if (notify) showToast(`Không đồng bộ được tab: ${error.message}`);
   }
+}
 
-  // ================= 2. INTEGRATED CODE SCRATCHPAD =================
+function addLocalPane() {
+  panes.push({
+    id: makePaneId('local'),
+    sourceTabId: null,
+    title: `Chat ${panes.length + 1}`,
+    url: DEFAULT_CHAT_URL,
+    createdAt: Date.now()
+  });
+  renderWorkspace();
+  scheduleSave();
+}
 
-  function renderFileTabs() {
-    fileTabsBar.innerHTML = '';
+function paneMetaText(pane) {
+  if (!Number.isInteger(pane.sourceTabId)) return 'workspace-only';
+  const source = sourceTabs.get(pane.sourceTabId);
+  if (!source) return 'tab gốc đã đóng · pane vẫn hoạt động';
+  if (source.discarded) return 'tab gốc đang ngủ · pane live';
+  if (source.active) return 'tab gốc active';
+  return 'tab gốc live';
+}
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const tab = document.createElement('div');
-      tab.className = `file-tab ${i === activeFileIndex ? 'active' : ''}`;
-      tab.dataset.fileIndex = i;
-
-      tab.innerHTML = `
-        <span class="file-name">${escapeHtml(file.name)}</span>
-        ${files.length > 1 ? `<span class="btn-close-file" title="Đóng file">✕</span>` : ''}
-      `;
-
-      tab.addEventListener('click', (e) => {
-        if (e.target.classList.contains('btn-close-file')) return;
-        switchFile(i);
-      });
-
-      const closeBtn = tab.querySelector('.btn-close-file');
-      if (closeBtn) {
-        closeBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          deleteFile(i);
-        });
-      }
-
-      // Double click to rename
-      tab.addEventListener('dblclick', () => {
-        const newName = prompt('Đổi tên file:', file.name);
-        if (newName && newName.trim()) {
-          file.name = newName.trim();
-          renderFileTabs();
-          saveFilesToStorage();
-        }
-      });
-
-      fileTabsBar.appendChild(tab);
-    }
-
-    updateEditorContent();
-  }
-
-  function switchFile(index) {
-    if (index >= 0 && index < files.length) {
-      // Save current content before switching
-      files[activeFileIndex].content = codeTextarea.value;
-      activeFileIndex = index;
-      renderFileTabs();
-    }
-  }
-
-  function updateEditorContent() {
-    const activeFile = files[activeFileIndex] || files[0];
-    if (activeFile) {
-      codeTextarea.value = activeFile.content || '';
-      updateLineNumbers();
-    }
-  }
-
-  function updateLineNumbers() {
-    const lines = codeTextarea.value.split('\n').length;
-    let numbersStr = '';
-    for (let i = 1; i <= lines; i++) {
-      numbersStr += `${i}\n`;
-    }
-    lineNumbers.textContent = numbersStr;
-  }
-
-  function addNewFile() {
-    const name = prompt('Nhập tên file mới (ví dụ: client.ts, query.sql):', `snippet-${files.length + 1}.js`);
-    if (!name || !name.trim()) return;
-
-    files.push({
-      name: name.trim(),
-      content: `// File: ${name.trim()}\n\n`
+function focusPane(paneId) {
+  focusedPaneId = focusedPaneId === paneId ? null : paneId;
+  renderWorkspace();
+  if (focusedPaneId) {
+    requestAnimationFrame(() => {
+      const frame = frameByPaneId.get(focusedPaneId);
+      frame?.contentWindow?.postMessage({ type: 'TABFLOW_WORKSPACE_FOCUS_COMPOSER' }, '*');
     });
-
-    activeFileIndex = files.length - 1;
-    renderFileTabs();
-    saveFilesToStorage();
-    showToast(`Đã tạo file ${name.trim()}`);
   }
+}
 
-  function deleteFile(index) {
-    if (files.length <= 1) return;
-    const deletedName = files[index].name;
-    files.splice(index, 1);
-    if (activeFileIndex >= files.length) {
-      activeFileIndex = files.length - 1;
-    }
-    renderFileTabs();
-    saveFilesToStorage();
-    showToast(`Đã đóng file ${deletedName}`);
+function removePane(paneId) {
+  panes = panes.filter(pane => pane.id !== paneId);
+  readyPanes.delete(paneId);
+  if (focusedPaneId === paneId) focusedPaneId = null;
+  renderWorkspace();
+  scheduleSave();
+}
+
+function openSource(pane) {
+  if (Number.isInteger(pane.sourceTabId) && sourceTabs.has(pane.sourceTabId)) {
+    chrome.runtime.sendMessage({ type: 'ACTIVATE_TAB', tabId: pane.sourceTabId }).catch(() => {});
+    return;
   }
+  chrome.tabs.create({ url: pane.url });
+}
 
-  function saveFilesToStorage() {
-    if (saveTimer) clearTimeout(saveTimer);
-    saveTimer = setTimeout(async () => {
-      try {
-        if (files[activeFileIndex]) {
-          files[activeFileIndex].content = codeTextarea.value;
-        }
-        await chrome.storage.local.set({ scratchpadFiles: files });
-      } catch (e) {
-        console.warn('[Workspace] Save files failed:', e);
-      }
-    }, 400);
-  }
+function createPaneElement(pane, index) {
+  const fragment = paneTemplate.content.cloneNode(true);
+  const paneEl = fragment.querySelector('.chat-pane');
+  const indexEl = fragment.querySelector('.pane-index');
+  const titleEl = fragment.querySelector('.pane-title');
+  const metaEl = fragment.querySelector('.pane-meta');
+  const loader = fragment.querySelector('.pane-loading');
+  const frame = fragment.querySelector('iframe');
+  const focusButton = fragment.querySelector('.btn-focus');
+  const composerButton = fragment.querySelector('.btn-composer');
+  const reloadButton = fragment.querySelector('.btn-reload');
+  const sourceButton = fragment.querySelector('.btn-source');
+  const removeButton = fragment.querySelector('.btn-remove');
 
-  async function loadFilesFromStorage() {
-    try {
-      const res = await chrome.storage.local.get('scratchpadFiles');
-      if (Array.isArray(res.scratchpadFiles) && res.scratchpadFiles.length > 0) {
-        files = res.scratchpadFiles;
-      }
-    } catch (e) {
-      console.warn('[Workspace] Load files failed:', e);
-    }
-    renderFileTabs();
-  }
+  paneEl.dataset.paneId = pane.id;
+  if (focusedPaneId === pane.id) paneEl.classList.add('focused-pane');
+  indexEl.textContent = String(index + 1);
+  titleEl.textContent = pane.title;
+  metaEl.textContent = paneMetaText(pane);
+  frame.src = pane.url;
+  frame.title = `${pane.title} — TabFlow pane ${index + 1}`;
+  frame.loading = panes.length > 8 && focusedPaneId !== pane.id ? 'lazy' : 'eager';
 
-  // Handle Tab key indentation in textarea
-  codeTextarea.addEventListener('keydown', (e) => {
-    if (e.key === 'Tab') {
-      e.preventDefault();
-      const start = codeTextarea.selectionStart;
-      const end = codeTextarea.selectionEnd;
-      const val = codeTextarea.value;
-
-      // Insert 2 spaces
-      codeTextarea.value = val.substring(0, start) + '  ' + val.substring(end);
-      codeTextarea.selectionStart = codeTextarea.selectionEnd = start + 2;
-      updateLineNumbers();
-      saveFilesToStorage();
-    } else if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-      e.preventDefault();
-      saveFilesToStorage();
-      showToast('✅ Đã lưu code vào máy');
-    }
+  frame.addEventListener('load', () => {
+    loader.classList.add('hidden');
+    readyPanes.add(pane.id);
+    updateStats();
   });
 
-  codeTextarea.addEventListener('input', () => {
-    updateLineNumbers();
-    saveFilesToStorage();
+  focusButton.textContent = focusedPaneId === pane.id ? '⤢' : '⛶';
+  focusButton.title = focusedPaneId === pane.id ? 'Trở lại toàn bộ workspace' : 'Phóng to pane';
+  focusButton.addEventListener('click', () => focusPane(pane.id));
+  paneEl.addEventListener('dblclick', event => {
+    if (event.target.closest('button')) return;
+    focusPane(pane.id);
   });
 
-  // Sync scrolling of line numbers with textarea
-  codeTextarea.addEventListener('scroll', () => {
-    lineNumbers.scrollTop = codeTextarea.scrollTop;
+  composerButton.addEventListener('click', () => {
+    frame.contentWindow?.postMessage({ type: 'TABFLOW_WORKSPACE_FOCUS_COMPOSER' }, '*');
   });
 
-  // Scratchpad Actions
-  btnCopyCode.addEventListener('click', async () => {
-    try {
-      await navigator.clipboard.writeText(codeTextarea.value);
-      showToast('📋 Đã sao chép toàn bộ code vào Clipboard!');
-    } catch (e) {
-      showToast('❌ Không thể sao chép code');
-    }
+  reloadButton.addEventListener('click', () => {
+    readyPanes.delete(pane.id);
+    loader.classList.remove('hidden');
+    frame.src = pane.url;
+    updateStats();
   });
 
-  btnDownloadCode.addEventListener('click', () => {
-    const activeFile = files[activeFileIndex] || { name: 'code.txt' };
-    const blob = new Blob([codeTextarea.value], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = activeFile.name;
-    a.click();
-    URL.revokeObjectURL(url);
-    showToast(`💾 Đã tải file ${activeFile.name}`);
-  });
+  sourceButton.addEventListener('click', () => openSource(pane));
+  removeButton.addEventListener('click', () => removePane(pane.id));
 
-  btnClearCode.addEventListener('click', () => {
-    if (confirm('Bạn có chắc muốn xóa trắng nội dung file này?')) {
-      codeTextarea.value = '';
-      updateLineNumbers();
-      saveFilesToStorage();
-    }
-  });
+  frameByPaneId.set(pane.id, frame);
+  return fragment;
+}
 
-  // Cross-Chat Code Exchanger: Send to Chat 1 or Chat 2
-  async function sendCodeToChatPrompt(paneIndex) {
-    const code = codeTextarea.value.trim();
-    if (!code) {
-      showToast('Khung soạn thảo đang rỗng!');
-      return;
-    }
-
-    const activeFile = files[activeFileIndex] || { name: 'code' };
-    const promptPayload = `Dưới đây là code từ file \`${activeFile.name}\`:\n\n\`\`\`\n${code}\n\`\`\`\nHãy kiểm tra, tối ưu hoặc thực hiện theo yêu cầu.`;
-
-    try {
-      await navigator.clipboard.writeText(promptPayload);
-      showToast(`📤 Đã sao chép code kèm prompt! Hãy nhấn Ctrl + V vào ô chat của Chat ${paneIndex + 1}.`);
-    } catch (e) {
-      showToast('Không thể sao chép prompt');
-    }
+function applyGrid() {
+  if (focusedPaneId) {
+    chatGrid.style.setProperty('--workspace-columns', '1');
+    chatGrid.style.setProperty('--workspace-rows', '1');
+    densityWarningEl.textContent = 'Focus mode · nhấn ⤢ hoặc Esc để xem lại toàn bộ pane.';
+    return;
   }
 
-  btnSendToPane1.addEventListener('click', () => sendCodeToChatPrompt(0));
-  btnSendToPane2.addEventListener('click', () => sendCodeToChatPrompt(1));
+  const rect = chatGrid.getBoundingClientRect();
+  const grid = computeGrid(panes.length, rect.width, rect.height, density);
+  chatGrid.style.setProperty('--workspace-columns', String(grid.columns));
+  chatGrid.style.setProperty('--workspace-rows', String(grid.rows));
+  densityWarningEl.textContent = densityWarning(grid);
+}
 
-  // ================= 3. CONTROLS & PERSISTENCE =================
+function updateStats() {
+  const sourceCount = panes.filter(pane => Number.isInteger(pane.sourceTabId)).length;
+  let sleeping = 0;
+  for (const pane of panes) {
+    const source = Number.isInteger(pane.sourceTabId) ? sourceTabs.get(pane.sourceTabId) : null;
+    if (source?.discarded) sleeping += 1;
+  }
 
-  btnToggleScratchpad.addEventListener('click', () => {
-    isScratchpadOpen = !isScratchpadOpen;
-    if (isScratchpadOpen) {
-      scratchpadPanel.classList.remove('collapsed');
-      btnToggleScratchpad.classList.add('primary');
-    } else {
-      scratchpadPanel.classList.add('collapsed');
-      btnToggleScratchpad.classList.remove('primary');
-    }
+  statPanes.textContent = String(panes.length);
+  statSources.textContent = String(sourceCount);
+  statSleeping.textContent = String(sleeping);
+  statReady.textContent = String([...readyPanes].filter(id => panes.some(pane => pane.id === id)).length);
+  workspaceSummary.textContent = panes.length === 0
+    ? 'Chưa có cuộc chat nào trong workspace'
+    : `${panes.length} cuộc chat trên một màn hình · ${sleeping} tab gốc đang ngủ`;
+}
+
+function renderWorkspace() {
+  frameByPaneId.clear();
+  paneIdByWindow.clear();
+  chatGrid.replaceChildren();
+
+  const visiblePanes = focusedPaneId
+    ? panes.filter(pane => pane.id === focusedPaneId)
+    : panes;
+
+  visiblePanes.forEach((pane, index) => {
+    const fragment = createPaneElement(pane, focusedPaneId ? panes.findIndex(item => item.id === pane.id) : index);
+    chatGrid.appendChild(fragment);
   });
 
-  btnLayout2.addEventListener('click', () => setLayout('2-col'));
-  btnLayout3.addEventListener('click', () => setLayout('3-col'));
-  btnLayout4.addEventListener('click', () => setLayout('4-grid'));
-  btnAddPane.addEventListener('click', () => addPane());
-
-  // Tile Windows Helper (Dual Chrome Windows Side-by-Side)
-  btnTileWindows.addEventListener('click', async () => {
-    try {
-      const res = await chrome.runtime.sendMessage({ type: 'TILE_WINDOWS' });
-      if (res && res.success) {
-        showToast('🪟 Đã chia đôi 2 cửa sổ Chrome 50/50 trên màn hình!');
-      }
-    } catch (e) {
-      console.warn('[Workspace] Tile windows failed:', e);
-      showToast('Đang mở 2 cửa sổ...');
-    }
-  });
-
-  async function saveWorkspaceState() {
-    try {
-      await chrome.storage.local.set({
-        workspaceState: {
-          layout: currentLayout,
-          panes: panes.map(p => ({ id: p.id, title: p.title, url: p.url }))
-        }
-      });
-    } catch (e) {
-      console.warn('[Workspace] State save failed:', e);
-    }
+  for (const [paneId, frame] of frameByPaneId.entries()) {
+    if (frame.contentWindow) paneIdByWindow.set(frame.contentWindow, paneId);
   }
 
-  async function loadWorkspaceState() {
-    try {
-      const res = await chrome.storage.local.get('workspaceState');
-      if (res && res.workspaceState) {
-        if (Array.isArray(res.workspaceState.panes) && res.workspaceState.panes.length > 0) {
-          panes = res.workspaceState.panes;
-        }
-        if (res.workspaceState.layout) {
-          currentLayout = res.workspaceState.layout;
-        }
-      }
-    } catch (e) {
-      console.warn('[Workspace] State load failed:', e);
+  emptyState.hidden = panes.length > 0;
+  chatGrid.hidden = panes.length === 0;
+  applyGrid();
+  updateStats();
+}
+
+async function takeoverWorkspace() {
+  const sourceIds = panes.map(pane => pane.sourceTabId).filter(Number.isInteger);
+  if (sourceIds.length === 0) {
+    showToast('Không có tab gốc nào để ngủ đông.');
+    return;
+  }
+
+  const notReady = panes.filter(pane => Number.isInteger(pane.sourceTabId) && !readyPanes.has(pane.id));
+  if (notReady.length > 0) {
+    showToast(`Còn ${notReady.length} pane chưa tải xong; chưa ngủ đông tab gốc.`);
+    return;
+  }
+
+  btnTakeover.disabled = true;
+  let discarded = 0;
+  let protectedCount = 0;
+  try {
+    for (const tabId of sourceIds) {
+      const result = await chrome.runtime.sendMessage({ type: 'DISCARD_TAB', tabId });
+      if (result?.success) discarded += 1;
+      else protectedCount += 1;
     }
-
-    setLayout(currentLayout);
+    await syncOpenTabs();
+    showToast(`Take over: ${discarded} tab gốc đã ngủ${protectedCount ? ` · ${protectedCount} tab đang được bảo vệ` : ''}.`);
+  } finally {
+    btnTakeover.disabled = false;
   }
+}
 
-  function escapeHtml(str) {
-    if (!str) return '';
-    return str.replace(/&/g, '&amp;')
-              .replace(/</g, '&lt;')
-              .replace(/>/g, '&gt;')
-              .replace(/"/g, '&quot;');
+function scheduleTabSync() {
+  if (syncTimer) clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => syncOpenTabs().catch(() => {}), 250);
+}
+
+window.addEventListener('message', event => {
+  if (!CHATGPT_ORIGINS.has(event.origin) || event.data?.type !== 'TABFLOW_WORKSPACE_FRAME_STATE') return;
+  const paneId = paneIdByWindow.get(event.source);
+  if (!paneId) return;
+  const pane = panes.find(item => item.id === paneId);
+  if (!pane) return;
+
+  const nextUrl = safeUrl(event.data.href);
+  const nextTitle = cleanTitle(event.data.title, pane.title);
+  let changed = false;
+  if (nextUrl !== pane.url) {
+    pane.url = nextUrl;
+    changed = true;
   }
+  if (nextTitle && nextTitle !== 'ChatGPT' && nextTitle !== pane.title) {
+    pane.title = nextTitle;
+    changed = true;
+  }
+  if (changed) scheduleSave();
 
-  // Initialize
-  loadFilesFromStorage();
-  loadWorkspaceState();
+  const paneEl = chatGrid.querySelector(`[data-pane-id="${CSS.escape(paneId)}"]`);
+  paneEl?.querySelector('.pane-title')?.replaceChildren(document.createTextNode(pane.title));
+  const meta = paneEl?.querySelector('.pane-meta');
+  if (meta) meta.textContent = paneMetaText(pane);
+});
+
+btnSyncTabs.addEventListener('click', () => syncOpenTabs({ notify: true }));
+btnNewChat.addEventListener('click', addLocalPane);
+btnEmptyNewChat.addEventListener('click', addLocalPane);
+btnTakeover.addEventListener('click', takeoverWorkspace);
+densitySelect.addEventListener('change', () => {
+  density = densitySelect.value;
+  applyGrid();
+  scheduleSave();
+});
+
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && focusedPaneId) {
+    focusedPaneId = null;
+    renderWorkspace();
+  }
+});
+
+window.addEventListener('resize', () => {
+  if (resizeTimer) clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(applyGrid, 120);
+}, { passive: true });
+
+chrome.tabs.onCreated.addListener(scheduleTabSync);
+chrome.tabs.onRemoved.addListener(scheduleTabSync);
+chrome.tabs.onUpdated.addListener((_tabId, changeInfo) => {
+  if (changeInfo.url || changeInfo.status === 'complete' || changeInfo.title) scheduleTabSync();
+});
+
+(async function init() {
+  try {
+    await loadSavedState();
+    await syncOpenTabs();
+    renderWorkspace();
+  } catch (error) {
+    console.error('[TabFlow Workspace] Init failed:', error);
+    renderWorkspace();
+    showToast(`Workspace init lỗi: ${error.message}`);
+  }
 })();
