@@ -7,15 +7,12 @@ const parallelSelect = document.getElementById('runtime-parallel-select');
 const pressureLabel = document.getElementById('runtime-pressure');
 const pressureSub = document.getElementById('runtime-pressure-sub');
 const generatorLabel = document.getElementById('runtime-generators');
+const budgetSub = document.getElementById('runtime-budget-sub');
 const agentsHost = document.getElementById('runtime-agents');
-
-const ROLE_ORDER = ['architect', 'implementer', 'reviewer'];
-const ROLE_LABELS = {
-  architect: '🏗 Architect',
-  implementer: '💻 Implementer',
-  reviewer: '🧪 Reviewer',
-  unassigned: '— Chưa phân vai —'
-};
+const liveSummary = document.getElementById('runtime-live-summary');
+const quickCard = document.getElementById('runtime-quick-card');
+const quickTitle = document.getElementById('runtime-quick-title');
+const quickSub = document.getElementById('runtime-quick-sub');
 
 let refreshTimer = null;
 let memoryPort = null;
@@ -28,62 +25,6 @@ function showRuntimeToast(message) {
   toast.textContent = message;
   toast.classList.add('show');
   setTimeout(() => toast.classList.remove('show'), 2600);
-}
-
-function ensureRuntimeBanner() {
-  let banner = document.getElementById('runtime-banner');
-  if (banner) return banner;
-  const actions = document.querySelector('.actions-bar');
-  if (!actions?.parentNode) return null;
-  banner = document.createElement('section');
-  banner.id = 'runtime-banner';
-  banner.className = 'runtime-banner';
-
-  const icon = document.createElement('div');
-  icon.className = 'runtime-banner-icon';
-  icon.textContent = '⚙';
-
-  const copy = document.createElement('div');
-  copy.className = 'runtime-banner-copy';
-  const title = document.createElement('div');
-  title.id = 'runtime-banner-title';
-  title.className = 'runtime-banner-title';
-  title.textContent = 'Co-op Runtime đang khởi tạo…';
-  const sub = document.createElement('div');
-  sub.id = 'runtime-banner-sub';
-  sub.className = 'runtime-banner-sub';
-  sub.textContent = 'Đang đọc trạng thái 3 tab ChatGPT';
-  copy.append(title, sub);
-
-  const open = document.createElement('button');
-  open.type = 'button';
-  open.className = 'runtime-banner-open';
-  open.textContent = 'Mở Co-op';
-  open.addEventListener('click', () => showRuntimeView());
-
-  banner.append(icon, copy, open);
-  actions.parentNode.insertBefore(banner, actions.nextSibling);
-  return banner;
-}
-
-function updateRuntimeBanner(snapshot = {}, settings = {}, chromeTabs = []) {
-  const banner = ensureRuntimeBanner();
-  if (!banner) return;
-  const title = document.getElementById('runtime-banner-title');
-  const sub = document.getElementById('runtime-banner-sub');
-  const entries = Object.values(snapshot.tabs || {});
-  const generating = Number(snapshot.generatingCount || 0);
-  const protectedCount = entries.filter(entry => entry.state === 'typing' || entry.state === 'generating' || Number(entry.protectUntil || 0) > Date.now()).length;
-  const pressure = snapshot.memory?.level || 'unknown';
-  const budget = Number(snapshot.parallelBudget || 1);
-  const liveTabs = chromeTabs.filter(tab => !tab.discarded).length;
-  const projectName = settings.projectName || entries.find(entry => entry.projectName)?.projectName || '';
-
-  banner.className = `runtime-banner pressure-${pressure}`;
-  if (title) title.textContent = projectName ? `Co-op · ${projectName}` : 'Co-op Runtime · chưa gắn project';
-  if (sub) {
-    sub.textContent = `${chromeTabs.length} tabs · ${liveTabs} live · ${generating} generating · ${protectedCount} protected · ${pressure.toUpperCase()} · budget ${budget}`;
-  }
 }
 
 function connectMemory() {
@@ -125,21 +66,25 @@ function memoryRpc(type, payload = {}) {
 async function loadProjects() {
   const data = await chrome.storage.local.get('projectVault');
   const projects = Array.isArray(data.projectVault) ? data.projectVault : [];
-  const previous = projectSelect.value;
+  const previous = projectSelect?.value || '';
+  if (!projectSelect) return projects;
+
   projectSelect.replaceChildren();
   const blank = document.createElement('option');
   blank.value = '';
   blank.textContent = projects.length ? 'Chọn project chung…' : 'Chưa có project trong Project Vault';
   projectSelect.appendChild(blank);
+
   for (const project of projects) {
     const option = document.createElement('option');
     option.value = project.id;
     option.textContent = project.name;
-    option.dataset.stack = project.stack || '';
-    option.dataset.rules = project.rules || '';
     projectSelect.appendChild(option);
   }
-  if ([...projectSelect.options].some(option => option.value === previous)) projectSelect.value = previous;
+
+  if ([...projectSelect.options].some(option => option.value === previous)) {
+    projectSelect.value = previous;
+  }
   return projects;
 }
 
@@ -157,32 +102,41 @@ function formatHeap(bytes) {
   return `${Math.round(bytes / 1024 / 1024)} MB JS heap`;
 }
 
-function roleSelect(entry) {
-  const select = document.createElement('select');
-  select.className = 'runtime-role-select';
-  for (const role of ['unassigned', ...ROLE_ORDER]) {
-    const option = document.createElement('option');
-    option.value = role;
-    option.textContent = ROLE_LABELS[role];
-    option.selected = (entry.role || 'unassigned') === role;
-    select.appendChild(option);
-  }
-  select.addEventListener('change', async () => {
-    await chrome.runtime.sendMessage({
-      type: 'RUNTIME_ASSIGN_ROLE',
-      tabId: entry.tabId,
-      role: select.value,
-      projectId: entry.projectId || '',
-      projectName: entry.projectName || ''
-    });
-    await refreshRuntime();
-  });
-  return select;
+function updateQuickCard(snapshot = {}, settings = {}, chromeTabs = []) {
+  if (!quickTitle || !quickSub) return;
+  const connected = Object.values(snapshot.tabs || {}).length;
+  const total = chromeTabs.length;
+  const generating = Number(snapshot.generatingCount || 0);
+  const protectedCount = Number(snapshot.protectedCount || 0);
+  const pressure = String(snapshot.memory?.level || 'unknown').toUpperCase();
+  const projectName = settings.projectName || '';
+
+  quickTitle.textContent = projectName
+    ? `Adaptive Workspace · ${projectName}`
+    : 'Adaptive Workspace · chưa gắn project';
+
+  const connectionNote = connected < total ? ` · ${total - connected} chưa kết nối` : '';
+  quickSub.textContent = `${total} tab mở · ${connected} runtime · ${generating} generating · ${protectedCount} protected · ${pressure}${connectionNote}`;
+  quickCard?.classList.toggle('has-warning', connected < total || pressure === 'HIGH' || pressure === 'CRITICAL');
 }
 
-function renderAgents(snapshot, chromeTabs) {
+function renderTabs(snapshot, chromeTabs) {
+  if (!agentsHost) return;
   const runtimeEntries = snapshot?.tabs || {};
-  const tabs = chromeTabs.slice().sort((a, b) => Number(b.active) - Number(a.active));
+  const tabs = chromeTabs.slice().sort((a, b) => {
+    const aEntry = runtimeEntries[String(a.id)] || {};
+    const bEntry = runtimeEntries[String(b.id)] || {};
+    const score = tab => {
+      const entry = runtimeEntries[String(tab.id)] || {};
+      if (tab.active) return 5;
+      if (entry.state === 'generating') return 4;
+      if (entry.state === 'typing') return 3;
+      if (!tab.discarded) return 2;
+      return 1;
+    };
+    return score(b) - score(a) || Number(b.lastAccessed || 0) - Number(a.lastAccessed || 0);
+  });
+
   agentsHost.replaceChildren();
   if (tabs.length === 0) {
     const empty = document.createElement('div');
@@ -193,40 +147,38 @@ function renderAgents(snapshot, chromeTabs) {
   }
 
   for (const tab of tabs) {
-    const entry = runtimeEntries[String(tab.id)] || {
-      tabId: tab.id,
-      title: tab.title,
-      state: tab.discarded ? 'sleeping' : 'idle',
-      mode: tab.discarded ? 'sleeping' : 'eco',
-      role: 'unassigned'
-    };
+    const entry = runtimeEntries[String(tab.id)] || null;
+    const modeName = tab.discarded ? 'sleeping' : (entry?.mode || 'untracked');
+    const stateName = tab.discarded ? 'sleeping' : (entry?.state || 'untracked');
+
     const card = document.createElement('article');
-    card.className = `runtime-agent-card mode-${entry.mode || 'eco'}`;
+    card.className = `runtime-agent-card mode-${modeName}`;
 
     const header = document.createElement('div');
     header.className = 'runtime-agent-head';
     const title = document.createElement('strong');
-    title.textContent = (tab.title || entry.title || 'ChatGPT').replace(/ - ChatGPT$/i, '');
+    title.textContent = (tab.title || 'ChatGPT').replace(/ - ChatGPT$/i, '');
     const mode = document.createElement('span');
-    mode.className = `runtime-mode-pill ${entry.mode || 'eco'}`;
-    mode.textContent = entry.mode || 'eco';
+    mode.className = `runtime-mode-pill ${modeName}`;
+    mode.textContent = modeName;
     header.append(title, mode);
 
     const meta = document.createElement('div');
     meta.className = 'runtime-agent-meta';
-    const pieces = [entry.state || 'idle'];
-    if (entry.projectName) pieces.push(entry.projectName);
-    const heap = formatHeap(entry.heapUsed);
+    const pieces = [stateName];
+    if (entry?.protectedFromDiscard) pieces.push('🛡 protected');
+    if (entry?.projectName) pieces.push(entry.projectName);
+    const heap = formatHeap(entry?.heapUsed);
     if (heap) pieces.push(heap);
+    if (!entry && !tab.discarded) pieces.push('reload tab để kết nối runtime');
     if (tab.discarded) pieces.push('💤 discarded');
     meta.textContent = pieces.join(' · ');
 
     const controls = document.createElement('div');
-    controls.className = 'runtime-agent-controls';
-    controls.appendChild(roleSelect(entry));
+    controls.className = 'runtime-agent-controls runtime-agent-controls-single';
     const focus = document.createElement('button');
     focus.className = 'runtime-small-btn';
-    focus.textContent = 'Mở';
+    focus.textContent = tab.discarded ? 'Mở & reload' : 'Mở tab';
     focus.addEventListener('click', () => chrome.runtime.sendMessage({ type: 'ACTIVATE_TAB', tabId: tab.id }));
     controls.appendChild(focus);
 
@@ -245,31 +197,39 @@ async function refreshRuntime() {
   const snapshot = runtime.snapshot || { tabs: {} };
   const settings = runtime.settings || {};
   const tabs = tabsData.tabs || [];
-  updateRuntimeBanner(snapshot, settings, tabs);
+  updateQuickCard(snapshot, settings, tabs);
 
   if (!runtimeView || runtimeView.style.display === 'none') return;
 
   const pressure = pressureText(snapshot.memory);
   pressureLabel.textContent = pressure.label;
   pressureLabel.className = pressure.className;
+
   const available = Number(snapshot.memory?.availableCapacity || 0);
   const total = Number(snapshot.memory?.capacity || 0);
   pressureSub.textContent = total > 0
     ? `${(available / 1024 ** 3).toFixed(1)} / ${(total / 1024 ** 3).toFixed(1)} GB RAM còn trống`
     : 'Không đọc được physical memory';
-  generatorLabel.textContent = `${snapshot.generatingCount || 0} generating / budget ${snapshot.parallelBudget || 1}`;
+
+  const generating = Number(snapshot.generatingCount || 0);
+  const protectedCount = Number(snapshot.protectedCount || 0);
+  generatorLabel.textContent = `${generating} generating · ${protectedCount} protected`;
+  if (budgetSub) budgetSub.textContent = `Recommended budget: ${snapshot.parallelBudget || 1}`;
+
   cooperativeToggle.checked = settings.cooperativeEnabled !== false;
   parallelSelect.value = String(settings.maxParallelGenerators || 2);
   if (settings.projectId && [...projectSelect.options].some(option => option.value === settings.projectId)) {
     projectSelect.value = settings.projectId;
   }
-  renderAgents(snapshot, tabs);
+
+  const connected = Object.values(snapshot.tabs || {}).length;
+  if (liveSummary) liveSummary.textContent = `${tabs.length} mở · ${connected} runtime`;
+  renderTabs(snapshot, tabs);
 }
 
-async function startCooperativeWorkspace() {
+async function bindAllTabsToWorkspace() {
   const projectId = projectSelect.value;
-  const option = projectSelect.selectedOptions[0];
-  if (!projectId || !option) {
+  if (!projectId) {
     showRuntimeToast('Hãy chọn project chung trước.');
     return;
   }
@@ -283,7 +243,8 @@ async function startCooperativeWorkspace() {
     const projects = Array.isArray(projectsData.projectVault) ? projectsData.projectVault : [];
     const project = projects.find(item => item.id === projectId);
     if (!project) throw new Error('Project không còn tồn tại');
-    const tabs = (tabsData.tabs || []).slice().sort((a, b) => Number(b.active) - Number(a.active)).slice(0, 3);
+
+    const tabs = (tabsData.tabs || []).filter(tab => Number.isInteger(tab.id));
     if (tabs.length === 0) throw new Error('Không có tab ChatGPT');
 
     await chrome.runtime.sendMessage({
@@ -296,21 +257,30 @@ async function startCooperativeWorkspace() {
       }
     });
 
-    for (let i = 0; i < tabs.length; i += 1) {
-      const tab = tabs[i];
-      await memoryRpc('BIND_PROJECT', { tabId: tab.id, tabUrl: tab.url, project });
-      await chrome.runtime.sendMessage({
-        type: 'RUNTIME_ASSIGN_ROLE',
-        tabId: tab.id,
-        role: ROLE_ORDER[i] || 'unassigned',
-        projectId: project.id,
-        projectName: project.name
-      });
+    let bound = 0;
+    let failed = 0;
+    for (const tab of tabs) {
+      try {
+        await memoryRpc('BIND_PROJECT', { tabId: tab.id, tabUrl: tab.url, project });
+        await chrome.runtime.sendMessage({
+          type: 'RUNTIME_ASSIGN_ROLE',
+          tabId: tab.id,
+          role: 'unassigned',
+          projectId: project.id,
+          projectName: project.name
+        });
+        bound += 1;
+      } catch {
+        failed += 1;
+      }
     }
-    showRuntimeToast(`Co-op: ${tabs.length} tab đã dùng chung ${project.name}`);
+
+    showRuntimeToast(failed > 0
+      ? `Đã gắn ${bound}/${tabs.length} tab; ${failed} tab cần reload rồi thử lại.`
+      : `Đã gắn toàn bộ ${bound} tab vào ${project.name}.`);
     await refreshRuntime();
   } catch (error) {
-    showRuntimeToast(`Không bật được Co-op: ${error.message}`);
+    showRuntimeToast(`Không bật được workspace: ${error.message}`);
   } finally {
     startButton.disabled = false;
   }
@@ -321,11 +291,13 @@ function showRuntimeView() {
     document.getElementById(id)?.classList.remove('active');
   }
   runtimeNav?.classList.add('active');
+
   for (const id of ['active-tabs-view', 'stashed-sessions-view', 'projects-vault-view', 'memory-view', 'search-section']) {
     const node = document.getElementById(id);
     if (node) node.style.display = 'none';
   }
-  runtimeView.style.display = 'flex';
+
+  if (runtimeView) runtimeView.style.display = 'flex';
   loadProjects().then(refreshRuntime).catch(() => {});
 }
 
@@ -334,13 +306,13 @@ function hideRuntimeView() {
   if (runtimeView) runtimeView.style.display = 'none';
 }
 
-ensureRuntimeBanner();
 runtimeNav?.addEventListener('click', showRuntimeView);
+quickCard?.addEventListener('click', showRuntimeView);
 for (const id of ['tab-nav-active', 'tab-nav-stashed', 'tab-nav-projects', 'tab-nav-memory']) {
   document.getElementById(id)?.addEventListener('click', hideRuntimeView);
 }
 
-startButton?.addEventListener('click', startCooperativeWorkspace);
+startButton?.addEventListener('click', bindAllTabsToWorkspace);
 cooperativeToggle?.addEventListener('change', async () => {
   await chrome.runtime.sendMessage({
     type: 'RUNTIME_SET_SETTINGS',
@@ -364,8 +336,7 @@ chrome.storage.onChanged.addListener(changes => {
   if (changes.projectVault) loadProjects().catch(() => {});
 });
 
-loadProjects().catch(() => {});
-refreshRuntime().catch(() => {});
+loadProjects().then(refreshRuntime).catch(() => {});
 refreshTimer = setInterval(() => refreshRuntime().catch(() => {}), 5000);
 window.addEventListener('unload', () => {
   if (refreshTimer) clearInterval(refreshTimer);
