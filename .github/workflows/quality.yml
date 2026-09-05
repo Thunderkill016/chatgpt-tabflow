@@ -1,0 +1,25 @@
+name: TabFlow Quality Gate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - feat/v3-cognitive-memory-wave1
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Run quality gate
+        run: npm run quality
