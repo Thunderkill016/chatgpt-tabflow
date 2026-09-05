@@ -2,11 +2,14 @@
   'use strict';
 
   if (window.top === window || window.__tabflowWorkspaceFrameBridgeInstalled) return;
-  const workspacePrefix = chrome.runtime.getURL('workspace/');
-  if (!document.referrer || !document.referrer.startsWith(workspacePrefix)) return;
-  window.__tabflowWorkspaceFrameBridgeInstalled = true;
 
   const EXTENSION_ORIGIN = new URL(chrome.runtime.getURL('/')).origin;
+  const ancestorOrigin = location.ancestorOrigins?.[0] || '';
+  const referrer = document.referrer || '';
+  const isTabFlowWorkspace = ancestorOrigin === EXTENSION_ORIGIN || referrer.startsWith(chrome.runtime.getURL('workspace/'));
+  if (!isTabFlowWorkspace) return;
+
+  window.__tabflowWorkspaceFrameBridgeInstalled = true;
   let lastFingerprint = '';
   let timer = null;
 
