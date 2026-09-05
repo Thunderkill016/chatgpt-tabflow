@@ -13,7 +13,7 @@
     <header class="header">
       <div class="brand">
         <div class="brand-icon">⚡</div>
-        <div><div class="brand-title">ChatGPT TabFlow <span class="badge-version">v3.2</span></div></div>
+        <div><div class="brand-title">ChatGPT TabFlow <span class="badge-version">v3.1.1</span></div></div>
       </div>
       <div class="header-actions">
         <button id="btn-refresh" class="icon-btn" title="Làm mới danh sách">🔄</button>
@@ -50,8 +50,8 @@
     <button id="runtime-quick-card" class="runtime-quick-card" type="button" title="Mở Cooperative Runtime">
       <span class="runtime-quick-icon">⚙</span>
       <span class="runtime-quick-copy">
-        <strong id="runtime-quick-title">Co-op Runtime · chưa cấu hình</strong>
-        <small id="runtime-quick-sub">3 tab có thể dùng chung project và chạy pipeline Architect → Implementer → Reviewer</small>
+        <strong id="runtime-quick-title">Adaptive Workspace · đang khởi tạo</strong>
+        <small id="runtime-quick-sub">TabFlow quản lý mọi tab ChatGPT đang mở theo trạng thái thật và RAM hệ thống.</small>
       </span>
       <span class="runtime-quick-open">Mở ›</span>
     </button>
@@ -147,49 +147,39 @@
 
     <main id="runtime-view" class="runtime-view" style="display:none;">
       <section class="runtime-hero">
-        <div class="runtime-eyebrow">COOPERATIVE MULTI-TAB RUNTIME</div>
-        <h2>3 tab, 1 project, 1 pipeline</h2>
-        <div class="runtime-muted">TabFlow điều phối ba ChatGPT tab như ba actor dùng chung project memory. Tab đang generate được bảo vệ khỏi discard; tab rảnh tự giảm extension workload.</div>
+        <div class="runtime-eyebrow">ADAPTIVE N-TAB RUNTIME</div>
+        <h2>Mọi tab ChatGPT, một workspace chung</h2>
+        <div class="runtime-muted">Không giới hạn 3 tab. TabFlow theo dõi mọi tab ChatGPT đang mở, bảo vệ tab đang gõ/đang trả lời, giảm maintenance trên tab nền và chỉ hibernate tab thật sự idle.</div>
         <div class="runtime-controls-row">
           <select id="runtime-project-select" class="runtime-select" aria-label="Project dùng chung"></select>
-          <select id="runtime-parallel-select" class="runtime-select" aria-label="Số generation đồng thời">
-            <option value="1">1 gen</option>
-            <option value="2" selected>2 gen</option>
+          <select id="runtime-parallel-select" class="runtime-select" aria-label="Giới hạn generation mong muốn">
+            <option value="1">target 1 gen</option>
+            <option value="2" selected>target 2 gen</option>
+            <option value="3">target 3 gen</option>
+            <option value="4">target 4 gen</option>
+            <option value="6">target 6 gen</option>
+            <option value="8">target 8 gen</option>
           </select>
         </div>
-        <button id="runtime-start-btn" class="btn-primary runtime-start">① Gắn 3 tab vào project & phân vai</button>
+        <button id="runtime-start-btn" class="btn-primary runtime-start">Gắn tất cả tab ChatGPT vào workspace này</button>
       </section>
 
       <section class="runtime-stat-grid">
         <div class="runtime-stat"><strong id="runtime-pressure" class="runtime-pressure unknown">UNKNOWN</strong><small id="runtime-pressure-sub">Đang đọc RAM hệ thống…</small></div>
-        <div class="runtime-stat"><strong id="runtime-generators">0 generating / budget 1</strong><small>Runtime scheduler</small></div>
-      </section>
-
-      <section class="runtime-card runtime-task-card">
-        <div class="runtime-card-head">
-          <div><strong>② Giao việc cho cả team</strong><div class="runtime-muted">Một lần nhập → Architect → Implementer → Reviewer tự handoff</div></div>
-        </div>
-        <textarea id="runtime-task-input" class="runtime-task-input" rows="5" placeholder="Ví dụ: Audit auth flow hiện tại, thiết kế refresh-token rotation, implement đầy đủ và review security/tests. Không hỏi lại nếu có thể tự suy luận từ Project Memory."></textarea>
-        <button id="runtime-run-pipeline" class="btn-primary runtime-run-pipeline">▶ Chạy pipeline 3 agent</button>
-        <div id="runtime-task-error" class="runtime-task-error" hidden></div>
-      </section>
-
-      <section class="runtime-card">
-        <div class="runtime-card-head"><strong>Pipeline timeline</strong><button id="runtime-clear-tasks" class="runtime-small-btn">Xóa lịch sử</button></div>
-        <div id="runtime-pipeline-list" class="runtime-pipeline-list"><div class="runtime-empty">Chưa có task. Gắn 3 tab rồi chạy pipeline.</div></div>
+        <div class="runtime-stat"><strong id="runtime-generators">0 generating · 0 protected</strong><small id="runtime-budget-sub">Recommended budget: 1</small></div>
       </section>
 
       <section class="runtime-card">
         <div class="runtime-card-head"><strong>Scheduling policy</strong></div>
         <div class="runtime-toggle-row">
-          <label for="runtime-coop-toggle">Cooperative mode</label>
+          <label for="runtime-coop-toggle">Adaptive cooperative mode</label>
           <input id="runtime-coop-toggle" type="checkbox" checked>
         </div>
-        <div class="runtime-warning">Tab <b>typing/generating</b> được đặt <code>autoDiscardable=false</code> và Safe Turbo Freeze phải bỏ qua. Khi RAM xuống thấp, scheduler giảm generation budget thay vì giết câu trả lời.</div>
+        <div class="runtime-warning">Tab <b>typing/generating</b> được bảo vệ bằng runtime state và <code>autoDiscardable=false</code>. Tab nền idle chuyển sang <b>eco</b>. Khi RAM căng, budget generation giảm nhưng workspace vẫn có thể chứa bao nhiêu tab tùy nhu cầu.</div>
       </section>
 
       <section class="runtime-card">
-        <div class="runtime-card-head"><strong>Live agents</strong><span class="runtime-muted">Architect → Implementer → Reviewer</span></div>
+        <div class="runtime-card-head"><strong>Live ChatGPT tabs</strong><span id="runtime-live-summary" class="runtime-muted">0 tabs</span></div>
         <div id="runtime-agents" class="runtime-agent-list"><div class="runtime-empty">Đang đồng bộ trạng thái tab…</div></div>
       </section>
     </main>
