@@ -27,6 +27,8 @@ const required = [
   'memory/text.js',
   'memory/db.js',
   'memory/bm25.js',
+  'memory/context-compiler.js',
+  'memory/continuity.js',
   'memory/memory-background.js',
   'workers/memory-worker.js',
   'offscreen/memory.html',
@@ -37,7 +39,9 @@ const required = [
   'v3/sidepanel.html',
   'v3/sidepanel-memory.js',
   'v3/sidepanel-memory.css',
-  'test/memory-core.test.mjs'
+  'test/memory-core.test.mjs',
+  'test/context-compiler.test.mjs',
+  'test/continuity.test.mjs'
 ];
 for (const rel of required) check(fs.existsSync(path.join(root, rel)) && fs.statSync(path.join(root, rel)).size > 20, `${rel} exists`);
 
@@ -57,7 +61,7 @@ check(isolatedScripts.indexOf('content-scripts/memory-client.js') >= 0, 'Isolate
 check(isolatedScripts.indexOf('content-scripts/memory-client.js') < isolatedScripts.indexOf('content-scripts/booster.js'), 'Memory client loads before UI booster');
 
 const background = read('memory/memory-background.js');
-check(background.includes("chrome.runtime.onConnect.addListener"), 'Memory transport uses runtime.Port actor channel');
+check(background.includes('chrome.runtime.onConnect.addListener'), 'Memory transport uses runtime.Port actor channel');
 check(background.includes("reasons: ['WORKERS']"), 'Offscreen document uses official WORKERS reason');
 check(!background.includes('chrome.runtime.onMessage.addListener'), 'Memory background avoids competing with legacy onMessage router');
 check(background.includes('chrome.tabs.onRemoved.addListener'), 'Transient tab bindings are cleaned on tab close');
@@ -67,6 +71,29 @@ check(bridge.includes('responseArchiveMeta'), 'Full-DAG archive piggybacks on ex
 check(bridge.includes('submitCache'), 'Non-idempotent prompt submission shield enabled');
 check(bridge.includes('SUBMIT_DEDUPE_MS'), 'Prompt replay protection has bounded lifetime');
 check(bridge.includes('fingerprint !== prepared.fingerprint'), 'RAG injection is fingerprint-bound to current prompt');
+
+const proxy = read('content-scripts/fetch-proxy.js');
+check(proxy.includes("const retrySafe = method === 'GET' || method === 'HEAD'"), 'Turbo proxy retries only safe/idempotent methods');
+check(proxy.includes('if (!retrySafe || attempt >= maxRetries) throw err'), 'Network failure never replays a mutating request');
+
+const worker = read('workers/memory-worker.js');
+check(worker.includes("from '../memory/context-compiler.js'"), 'Memory worker uses tiered context compiler');
+check(worker.includes('buildStructuralCandidates(fetched'), 'RAG includes compact structural repo-map candidates');
+check(worker.includes('visibleCitations'), 'Model context and visible citations are separate outputs');
+check(worker.includes('void current.then(cleanup, cleanup)'), 'Write queue cleanup consumes both promise outcomes');
+check(worker.includes('staleArchiveSkipped'), 'Old archive evidence cannot silently overwrite newer VFS state');
+check(!worker.includes('current.finally(() =>'), 'Write queue no longer creates orphan rejecting finally promise');
+
+const contextCompiler = read('memory/context-compiler.js');
+check(contextCompiler.includes('authority'), 'Context compiler has authority tier');
+check(contextCompiler.includes('continuity'), 'Context compiler reserves continuity tier');
+check(contextCompiler.includes('structural'), 'Context compiler has structural repo-map tier');
+check(contextCompiler.includes('retrieval'), 'Context compiler has retrieval tier');
+
+const continuity = read('memory/continuity.js');
+check(continuity.includes('parentId'), 'Continuity kernel models parent message identity');
+check(continuity.includes('childrenIds'), 'Continuity kernel preserves conversation branches');
+check(continuity.includes('previousCheckpointId'), 'Continuity checkpoints form an explicit lineage');
 
 const client = read('content-scripts/memory-client.js');
 check(client.includes("chrome.runtime.connect({ name: PORT_NAME })"), 'Content client uses long-lived Port RPC');
