@@ -41,6 +41,8 @@ const required = [
   'content-scripts/memory-client.js',
   'v3/service-worker.js',
   'v3/sidepanel.html',
+  'v3/sidepanel-controller.js',
+  'v3/sidepanel-control.css',
   'v3/sidepanel-memory.js',
   'v3/sidepanel-memory.css',
   'test/memory-core.test.mjs',
@@ -107,9 +109,9 @@ check(worker.includes('skippedStale'), 'Archive ingest reports skipped stale obs
 
 const panel = read('v3/sidepanel.html');
 check(panel.includes('id="tab-nav-memory"'), 'Visible Memory navigation exists');
-check(panel.includes('Virtual Project Filesystem'), 'Visible VFS inspector exists');
-check(panel.includes('Architecture Decisions'), 'Visible decision log exists');
-check(panel.includes('Prompt Context Compiler'), 'Visible RAG inspector exists');
+check(panel.includes('id="memory-files-list"') && panel.includes('id="memory-file-preview"'), 'Visible VFS inspector exists');
+check(panel.includes('id="memory-decisions-list"'), 'Visible decision log exists');
+check(panel.includes('id="memory-rag-state"') && panel.includes('id="memory-rag-citations"'), 'Visible RAG inspector exists');
 
 const forbiddenFiles = required.filter(rel => rel.endsWith('.js') || rel.endsWith('.mjs'));
 for (const rel of forbiddenFiles) {
