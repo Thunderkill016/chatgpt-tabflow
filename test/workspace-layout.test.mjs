@@ -1,5 +1,15 @@
 import assert from 'node:assert/strict';
 import { computeGrid, densityWarning } from '../workspace/layout.js';
+import {
+  DEFAULT_SPOTLIGHT_RATIO,
+  MIN_SPOTLIGHT_RATIO,
+  MAX_SPOTLIGHT_RATIO,
+  spotlightMaxRatio,
+  clampSpotlightRatio,
+  spotlightRatioFromPointer,
+  nudgeSpotlightRatio,
+  spotlightRatioCss
+} from '../workspace/spotlight-layout.js';
 
 for (const count of [1, 2, 3, 4, 5, 8, 12, 20, 50]) {
   const grid = computeGrid(count, 1920, 1000, 'auto');
@@ -37,5 +47,15 @@ assert.deepEqual(one, {
 assert.equal(densityWarning({ mode: 'grid', paneWidth: 700, paneHeight: 500 }), '');
 assert.ok(densityWarning({ mode: 'grid', paneWidth: 250, paneHeight: 180 }).length > 0);
 assert.ok(densityWarning(threeAuto).includes('Spotlight'));
+
+assert.equal(clampSpotlightRatio(DEFAULT_SPOTLIGHT_RATIO, 1920), DEFAULT_SPOTLIGHT_RATIO);
+assert.equal(clampSpotlightRatio(0.1, 1920), MIN_SPOTLIGHT_RATIO);
+assert.equal(clampSpotlightRatio(0.99, 1920), MAX_SPOTLIGHT_RATIO);
+assert.ok(spotlightMaxRatio(1080) < MAX_SPOTLIGHT_RATIO, 'narrow viewport preserves secondary minimum width');
+assert.equal(clampSpotlightRatio(0.99, 1080), spotlightMaxRatio(1080));
+assert.equal(spotlightRatioFromPointer(960, 1920), 0.5);
+assert.equal(nudgeSpotlightRatio(0.64, 0.02, 1920), 0.66);
+assert.equal(nudgeSpotlightRatio(0.49, -0.05, 1920), MIN_SPOTLIGHT_RATIO);
+assert.equal(spotlightRatioCss(0.64, 1920), '64.00%');
 
 console.log('✅ workspace-layout.test.mjs passed');
