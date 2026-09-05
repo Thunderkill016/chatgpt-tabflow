@@ -1,21 +1,22 @@
 {
   "name": "chatgpt-tabflow",
-  "version": "1.0.0",
-  "description": "High-performance Chrome Extension for managing and optimizing multiple ChatGPT tabs without lag",
+  "version": "3.0.0",
+  "description": "Local-first Cognitive Developer OS and performance layer for ChatGPT",
   "type": "module",
   "scripts": {
     "generate-icons": "node scripts/generate-icons.mjs",
-    "test": "node test/tabflow.test.mjs",
-    "verify": "node scripts/verify.mjs",
+    "test": "node test/tabflow.test.mjs && node test/memory-core.test.mjs",
+    "verify": "node scripts/verify.mjs && node scripts/verify-memory.mjs",
     "quality": "npm run test && npm run verify"
   },
   "keywords": [
     "chatgpt",
     "chrome-extension",
+    "local-rag",
+    "project-memory",
     "memory-saver",
     "tab-manager",
-    "anti-lag",
-    "performance"
+    "developer-tools"
   ],
   "author": "Thunder & Antigravity",
   "license": "MIT"
