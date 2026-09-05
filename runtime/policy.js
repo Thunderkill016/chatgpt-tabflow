@@ -12,6 +12,11 @@ export const EXECUTION_MODES = Object.freeze({
   STRAINED: 'strained'
 });
 
+// Content agent gửi heartbeat mỗi 15s khi typing/generating.
+// Nếu quá 45s không còn heartbeat, state productive được xem là stale để
+// tránh một tab đã crash/reload bị bảo vệ khỏi discard vĩnh viễn.
+export const PRODUCTIVE_STATE_STALE_MS = 45_000;
+
 export function classifyMemoryPressure(info) {
   const capacity = Number(info?.capacity || 0);
   const available = Number(info?.availableCapacity || 0);
@@ -31,10 +36,18 @@ export function recommendedParallelGenerators(pressureLevel, userLimit = 2) {
   return limit;
 }
 
+export function isProductiveStateFresh(entry, now = Date.now()) {
+  if (!entry) return false;
+  if (entry.state !== RUNTIME_STATES.GENERATING && entry.state !== RUNTIME_STATES.TYPING) return false;
+  const updatedAt = Number(entry.updatedAt || entry.lastActivityAt || 0);
+  if (!(updatedAt > 0)) return true;
+  return now - updatedAt <= PRODUCTIVE_STATE_STALE_MS;
+}
+
 export function shouldProtectFromDiscard(entry, now = Date.now()) {
   if (!entry) return false;
-  if (entry.state === RUNTIME_STATES.GENERATING || entry.state === RUNTIME_STATES.TYPING) return true;
-  return Number(entry.protectUntil || 0) > now;
+  if (Number(entry.protectUntil || 0) > now) return true;
+  return isProductiveStateFresh(entry, now);
 }
 
 export function deriveExecutionMode(entry, context = {}) {
