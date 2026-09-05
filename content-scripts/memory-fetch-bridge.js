@@ -85,11 +85,14 @@
         if (role === 'user' || role === 'assistant') {
           const text = messageText(node.message);
           if (text) {
+            const sourceTime = Number(node.message?.create_time);
             newestFirst.push({
               id: String(nodeId),
               role,
               text,
-              observedAt: Number(node.message?.create_time ? node.message.create_time * 1000 : Date.now())
+              // Unknown historical timestamps must stay older than live DOM
+              // observations; using Date.now() here can resurrect stale code.
+              observedAt: Number.isFinite(sourceTime) && sourceTime > 0 ? sourceTime * 1000 : 1
             });
           }
         }
