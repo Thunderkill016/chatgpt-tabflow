@@ -22,35 +22,48 @@ function read(rel) {
   return fs.readFileSync(path.join(root, rel), 'utf8');
 }
 
-console.log('🖥️ Verifying TabFlow unified N-pane workspace...');
+console.log('🖥️ Verifying TabFlow v3.2.1 remote unified workspace...');
 
 const manifest = JSON.parse(read('manifest.json'));
 const workspace = read('workspace/workspace.js');
 const layout = read('workspace/layout.js');
 const html = read('workspace/index.html');
-const bridge = read('content-scripts/workspace-frame-bridge.js');
+const remoteAgent = read('content-scripts/workspace-remote-agent.js');
 
-check(manifest.version === '3.2.0', 'manifest is v3.2.0');
-const bridgeEntry = manifest.content_scripts.find(item => item.js?.includes('content-scripts/workspace-frame-bridge.js'));
-check(Boolean(bridgeEntry), 'workspace frame bridge registered');
-check(bridgeEntry?.all_frames === true, 'workspace frame bridge runs in embedded ChatGPT frames');
-check(html.includes('Unified Chat Workspace'), 'workspace is the primary unified screen');
-check(html.includes('id="btn-sync-tabs"'), 'workspace exposes real-tab sync');
-check(html.includes('id="btn-takeover"'), 'workspace exposes safe takeover');
-check(workspace.includes("type: 'GET_TABS_DATA'"), 'workspace imports real open ChatGPT tabs');
-check(workspace.includes("type: 'DISCARD_TAB'"), 'takeover can hibernate original tabs');
-check(workspace.includes('computeGrid('), 'workspace uses adaptive N-pane layout policy');
-check(workspace.includes('paneElementById'), 'workspace reconciles stable pane elements');
-check(workspace.includes('if (!paneEl) {'), 'existing pane browsing contexts are preserved during sync');
+check(manifest.version === '3.2.1', 'manifest is v3.2.1');
+check(!manifest.permissions.includes('declarativeNetRequest'), 'workspace no longer strips site framing headers');
+check(!manifest.declarative_net_request, 'obsolete iframe DNR rules are not registered');
+const isolated = manifest.content_scripts.find(item => item.world !== 'MAIN' && item.js?.includes('content-scripts/runtime-agent.js'));
+check(isolated?.js?.includes('content-scripts/workspace-remote-agent.js'), 'remote workspace agent registered in top-level ChatGPT tabs');
+check(!manifest.content_scripts.some(item => item.js?.includes('content-scripts/workspace-frame-bridge.js')), 'iframe frame bridge removed from active manifest path');
+
+check(html.includes('Unified Chat Workspace'), 'workspace remains the primary unified screen');
+check(html.includes('v3.2.1'), 'workspace visibly identifies remote-console release');
+check(!/<iframe\b/i.test(html), 'workspace contains zero ChatGPT iframes');
+check(html.includes('pane-transcript'), 'workspace renders lightweight transcript mirrors');
+check(html.includes('pane-input'), 'each pane has a local remote composer');
+check(html.includes('btn-sleep-idle'), 'workspace can hibernate idle source tabs');
+
+check(workspace.includes("chrome.tabs.connect(tabId, { name: REMOTE_PORT_NAME })"), 'workspace uses tabs.connect to each source tab');
+check(workspace.includes("'COMMAND_SEND'"), 'workspace can send prompts to a source tab');
+check(workspace.includes("'COMMAND_STOP'"), 'workspace can stop an active generation');
+check(workspace.includes("type: 'GET_TABS_DATA'"), 'workspace discovers real ChatGPT tabs');
+check(workspace.includes("type: 'DISCARD_ALL_BACKGROUND'"), 'workspace reuses protected idle-tab hibernation');
+check(workspace.includes('computeGrid('), 'workspace keeps adaptive N-pane layout policy');
+check(!workspace.includes('getBoundingClientRect('), 'workspace layout avoids forced geometry reads');
 check(!workspace.includes('panes.length >= 4'), 'no four-pane hard cap');
 check(!workspace.includes('.slice(0, 2)'), 'no destructive two-pane slicing');
 check(!workspace.includes('.slice(0, 3)'), 'no three-pane cap');
 check(!/\binnerHTML\b/.test(workspace), 'workspace avoids dynamic innerHTML injection');
-check(!/on(?:click|change|input|load)\s*=/.test(html), 'workspace HTML has no inline handlers');
-check(bridge.includes('TABFLOW_WORKSPACE_FRAME_STATE'), 'frame bridge reports SPA URL/title state');
-check(bridge.includes('TABFLOW_WORKSPACE_FOCUS_COMPOSER'), 'frame bridge supports focused-pane composer handoff');
 
-for (const rel of ['workspace/workspace.js', 'workspace/layout.js', 'content-scripts/workspace-frame-bridge.js']) {
+check(remoteAgent.includes("const PORT_NAME = 'TABFLOW_WORKSPACE_REMOTE'"), 'remote agent exposes a dedicated Port protocol');
+check(remoteAgent.includes('collectMessages()'), 'remote agent mirrors conversation transcript');
+check(remoteAgent.includes('submitPrompt('), 'remote agent supports same-screen prompt submission');
+check(remoteAgent.includes('hasConversationLimit()'), 'remote agent detects conversation-limit rollover boundary');
+check(remoteAgent.includes("error.code = 'CONVERSATION_LIMIT'"), 'remote agent refuses unsafe send after conversation limit');
+check(remoteAgent.includes('ports.size === 0'), 'remote DOM observer does no mirror work without workspace subscribers');
+
+for (const rel of ['workspace/workspace.js', 'workspace/layout.js', 'content-scripts/workspace-remote-agent.js']) {
   const source = read(rel);
   check(!/\beval\s*\(/.test(source), `${rel}: no eval()`);
   check(!/\bnew\s+Function\s*\(/.test(source), `${rel}: no new Function()`);
