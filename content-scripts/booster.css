@@ -38,33 +38,90 @@ textarea[data-id="root"] {
 }
 
 /* ==========================================================================
-   FLOATING TABFLOW DEV HUD (Top-Right of ChatGPT Interface)
+   TABFLOW EDGE DOCK
+   Default state occupies only a 30x32px sliver on the right edge. Hover or
+   keyboard focus expands the full controls leftward, so the ChatGPT canvas is
+   not permanently covered by the old wide floating toolbar.
    ========================================================================== */
 
 #tabflow-hud {
   position: fixed;
-  top: 12px;
-  right: 64px;
+  top: 72px;
+  right: 0;
   z-index: 99998;
   display: flex;
   align-items: center;
-  gap: 8px;
-  background: rgba(15, 23, 42, 0.88);
-  backdrop-filter: blur(12px);
-  border: 1px solid #334155;
-  border-radius: 24px;
-  padding: 4px 10px;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+  justify-content: flex-start;
+  gap: 0;
+  width: 30px;
+  height: 32px;
+  max-width: calc(100vw - 16px);
+  overflow: hidden;
+  padding: 0;
+  background: rgba(15, 23, 42, 0.82);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(71, 85, 105, 0.72);
+  border-right: 0;
+  border-radius: 16px 0 0 16px;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.24);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-size: 12px;
   color: #f8fafc;
   user-select: none;
+  opacity: 0.58;
+  transition:
+    opacity 0.14s ease,
+    width 0.18s ease,
+    padding 0.18s ease,
+    gap 0.18s ease,
+    transform 0.14s ease;
+}
+
+#tabflow-hud:hover,
+#tabflow-hud:focus-within {
+  width: auto;
+  height: auto;
+  min-height: 32px;
+  gap: 6px;
+  padding: 4px 8px;
+  opacity: 1;
+}
+
+#tabflow-hud:not(:hover):not(:focus-within) .hud-meter {
+  width: 30px;
+  min-width: 30px;
+  height: 32px;
+  padding: 0;
+  justify-content: center;
+  background: transparent !important;
+  border: 0 !important;
+}
+
+#tabflow-hud:not(:hover):not(:focus-within) #hud-meter-text,
+#tabflow-hud:not(:hover):not(:focus-within) .hud-btn {
+  display: none;
+}
+
+#tabflow-hud:not(:hover):not(:focus-within) .hud-meter > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 32px;
+  margin: 0;
+}
+
+body.tabflow-typing-active #tabflow-hud:not(:hover):not(:focus-within) {
+  opacity: 0.16;
+  transform: translateX(12px);
 }
 
 .hud-item {
   display: flex;
   align-items: center;
   gap: 5px;
+  flex: 0 0 auto;
 }
 
 /* Context Capacity Meter Badge */
@@ -76,6 +133,7 @@ textarea[data-id="root"] {
   border-radius: 12px;
   font-weight: 600;
   font-size: 11px;
+  white-space: nowrap;
 }
 
 .hud-meter.green {
@@ -115,6 +173,8 @@ textarea[data-id="root"] {
   display: flex;
   align-items: center;
   gap: 4px;
+  flex: 0 0 auto;
+  white-space: nowrap;
   transition: all 0.15s ease;
 }
 
