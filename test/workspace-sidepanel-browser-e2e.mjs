@@ -67,7 +67,34 @@ try {
     'Workspace policy does not disable the global/default side panel for normal tabs'
   );
 
-  console.log('✅ Workspace side-panel Chromium E2E passed');
+  const panel = await context.newPage();
+  await panel.goto(`chrome-extension://${id}/v3/sidepanel.html`);
+  await panel.waitForSelector('#control-current-chat');
+
+  assert.equal(await panel.locator('#badge-version').textContent(), 'v3.2.0', 'Control Center version comes from manifest');
+  assert.equal(await panel.locator('text=RAM TIẾT KIỆM').count(), 0, 'legacy estimated RAM metric is absent');
+  assert.equal(await panel.locator('#btn-open-coding-hub').count(), 1, 'Unified Workspace remains the primary action');
+  assert.equal(await panel.locator('#active-tabs-view').isVisible(), true, 'Chats view is visible by default');
+
+  await panel.locator('#tab-nav-memory').click();
+  await panel.waitForFunction(() => document.getElementById('memory-view')?.style.display === 'flex');
+  assert.equal(await panel.locator('#memory-view').isVisible(), true, 'Memory view opens from Control Center nav');
+
+  await panel.locator('#tab-nav-runtime').click();
+  await panel.waitForFunction(() => document.getElementById('runtime-view')?.style.display === 'flex');
+  assert.equal(await panel.locator('#runtime-view').isVisible(), true, 'Runtime view opens from Control Center nav');
+
+  const workspacePagesBefore = context.pages().filter(page => page.url().includes('/workspace/index.html')).length;
+  await panel.locator('#btn-open-coding-hub').click();
+  await panel.waitForFunction(
+    async before => {
+      const tabs = await chrome.tabs.query({});
+      return tabs.filter(tab => String(tab.url || '').includes('/workspace/index.html')).length > before;
+    },
+    workspacePagesBefore
+  );
+
+  console.log('✅ Workspace side-panel policy + Control Center Chromium E2E passed');
 } finally {
   if (context) await context.close();
   fs.rmSync(userDataDir, { recursive: true, force: true });
