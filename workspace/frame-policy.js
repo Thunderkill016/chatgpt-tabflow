@@ -5,8 +5,9 @@ export const WORKSPACE_FRAME_REQUEST_DOMAINS = Object.freeze(['chatgpt.com', 'ch
 export function normalizeTabIds(tabIds = []) {
   const unique = new Set();
   for (const value of Array.isArray(tabIds) ? tabIds : []) {
+    if (value === null || value === undefined || value === '' || typeof value === 'boolean') continue;
     const id = Number(value);
-    if (Number.isInteger(id) && id >= 0) unique.add(id);
+    if (Number.isInteger(id) && id > 0) unique.add(id);
   }
   return [...unique].sort((a, b) => a - b);
 }
