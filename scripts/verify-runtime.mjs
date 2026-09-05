@@ -40,6 +40,8 @@ check(wrapper.includes("runtime/coordinator.js"), 'v3 service worker imports run
 const legacyWorker = read('service-worker.js');
 check(legacyWorker.includes("runtime/protection.js"), 'legacy lifecycle uses runtime discard protection');
 check(legacyWorker.includes('canDiscardRuntimeTab'), 'discard paths consult runtime protection state');
+check(legacyWorker.includes('autoDiscardEnabled'), 'lifecycle has a real auto-sleep setting');
+check(legacyWorker.includes('discardIdleMinutes'), 'lifecycle has a real idle threshold setting');
 
 const sidepanel = read('v3/sidepanel.html');
 const sidepanelRuntime = read('v3/sidepanel-runtime.js');
@@ -48,7 +50,16 @@ const agent = read('content-scripts/runtime-agent.js');
 const protection = read('runtime/protection.js');
 
 check(sidepanel.includes('id="tab-nav-runtime"') && sidepanel.includes('id="runtime-view"'), 'side panel clearly exposes adaptive runtime');
-check(sidepanel.includes('id="runtime-start-btn"') && sidepanelRuntime.includes('bindAllTabsToWorkspace'), 'workspace action binds all ChatGPT tabs');
+check(sidepanel.includes('id="runtime-start-btn"') && sidepanelRuntime.includes('bindAllTabsToWorkspace'), 'project action binds all ChatGPT tabs');
+check(sidepanel.includes('id="runtime-coop-toggle"') && sidepanelRuntime.includes('cooperativeEnabled: cooperativeToggle.checked'), 'automatic coordination control maps to runtime settings');
+check(sidepanel.includes('id="runtime-auto-sleep-toggle"') && sidepanelRuntime.includes('autoDiscardEnabled: autoSleepToggle.checked'), 'auto-sleep control maps to real lifecycle settings');
+check(sidepanel.includes('id="runtime-idle-minutes"') && sidepanelRuntime.includes('discardIdleMinutes: minutes'), 'idle threshold control maps to real lifecycle settings');
+check(sidepanel.includes('id="runtime-parallel-select"') && sidepanelRuntime.includes('maxParallelGenerators: maximum'), 'parallel ceiling control maps to runtime settings');
+check(sidepanel.includes('id="runtime-optimize-btn"') && sidepanelRuntime.includes("type: 'DISCARD_ALL_BACKGROUND'"), 'optimize-now action uses protected background discard path');
+check(sidepanel.includes('runtime-locked') && sidepanel.includes('Luôn bật'), 'productive-chat protection is presented as a non-optional safety invariant');
+check(!sidepanel.includes('Recommended budget'), 'runtime UI does not expose internal scheduler jargon');
+check(!sidepanel.includes('target 1 gen') && !sidepanel.includes('target 2 gen'), 'runtime UI does not expose raw generation target jargon');
+check(!sidepanelRuntime.includes('formatHeap('), 'runtime UI does not present per-tab heap as total resource truth');
 check(!sidepanel.includes('3 tab, 1 project'), 'UI is not hard-coded to 3 tabs');
 check(!sidepanelRuntime.includes('.slice(0, 3)'), 'side panel does not truncate workspace to 3 tabs');
 check(!coordinator.includes('Math.min(2, Number(patch.maxParallelGenerators'), 'coordinator no longer hard caps configured target at 2');
