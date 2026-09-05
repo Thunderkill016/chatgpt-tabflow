@@ -22,10 +22,10 @@ function read(rel) {
   return fs.readFileSync(path.join(root, rel), 'utf8');
 }
 
-console.log('⚙️ Verifying TabFlow cooperative multi-tab runtime...');
+console.log('⚙️ Verifying TabFlow adaptive N-tab runtime...');
 
 const manifest = JSON.parse(read('manifest.json'));
-check(manifest.version === '3.1.0', 'manifest is v3.1.0');
+check(manifest.version === '3.1.1', 'manifest is v3.1.1');
 check(manifest.permissions.includes('system.memory'), 'system.memory permission declared');
 check(manifest.permissions.includes('storage'), 'storage permission declared');
 check(manifest.permissions.includes('tabs'), 'tabs permission declared');
@@ -39,12 +39,27 @@ check(wrapper.includes("runtime/coordinator.js"), 'v3 service worker imports run
 
 const legacyWorker = read('service-worker.js');
 check(legacyWorker.includes("runtime/protection.js"), 'legacy lifecycle uses runtime discard protection');
-check(legacyWorker.includes('canDiscardRuntimeTab'), 'all discard entry points can consult protection state');
+check(legacyWorker.includes('canDiscardRuntimeTab'), 'discard paths consult runtime protection state');
 
 const sidepanel = read('v3/sidepanel.html');
-check(sidepanel.includes('tab-nav-runtime'), 'side panel exposes Co-op navigation');
-check(sidepanel.includes('runtime-start-btn'), 'side panel exposes cooperative workspace action');
-check(sidepanel.includes('sidepanel-runtime.js'), 'runtime controller loaded');
+const sidepanelRuntime = read('v3/sidepanel-runtime.js');
+const coordinator = read('runtime/coordinator.js');
+const agent = read('content-scripts/runtime-agent.js');
+const protection = read('runtime/protection.js');
+
+check(sidepanel.includes('ADAPTIVE N-TAB RUNTIME'), 'side panel clearly exposes N-tab runtime');
+check(sidepanel.includes('Gắn tất cả tab ChatGPT'), 'workspace action binds all ChatGPT tabs');
+check(!sidepanel.includes('3 tab, 1 project'), 'UI is not hard-coded to 3 tabs');
+check(!sidepanelRuntime.includes('.slice(0, 3)'), 'side panel does not truncate workspace to 3 tabs');
+check(!coordinator.includes('Math.min(2, Number(patch.maxParallelGenerators'), 'coordinator no longer hard caps configured target at 2');
+check(coordinator.includes('liveTabCount'), 'coordinator tracks dynamic connected tab count');
+check(coordinator.includes('connectedEntries'), 'coordinator distinguishes connected renderers');
+check(protection.includes('if (!entry) return false'), 'unknown runtime state fails safe against discard');
+check(agent.includes('GENERATION_START_GRACE_MS'), 'generation detector has startup grace window');
+check(agent.includes('GENERATION_FINISH_MISSES'), 'generation detector requires stable completion');
+check(!agent.includes('RUNTIME_TASK'), 'unfinished pipeline executor is absent from runtime agent');
+check(!fs.existsSync(path.join(root, 'runtime', 'pipeline.js')), 'unfinished pipeline module removed');
+check(!fs.existsSync(path.join(root, 'runtime', 'task-store.js')), 'unfinished task store removed');
 
 const runtimeFiles = [
   'runtime/policy.js',
