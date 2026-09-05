@@ -6,15 +6,14 @@
   <title>ChatGPT TabFlow Cognitive OS</title>
   <link rel="stylesheet" href="../sidepanel/style.css">
   <link rel="stylesheet" href="sidepanel-memory.css">
+  <link rel="stylesheet" href="sidepanel-runtime.css">
 </head>
 <body>
   <div class="container">
     <header class="header">
       <div class="brand">
         <div class="brand-icon">⚡</div>
-        <div>
-          <div class="brand-title">ChatGPT TabFlow <span class="badge-version">v3.0</span></div>
-        </div>
+        <div><div class="brand-title">ChatGPT TabFlow <span class="badge-version">v3.1</span></div></div>
       </div>
       <div class="header-actions">
         <button id="btn-refresh" class="icon-btn" title="Làm mới danh sách">🔄</button>
@@ -39,8 +38,8 @@
       <button id="btn-open-coding-hub" class="btn-primary" style="background:linear-gradient(135deg,#8b5cf6,#3b82f6);box-shadow:0 4px 12px rgba(139,92,246,.4);" title="Mở Multi-Chat Coding Hub">
         <span>🖥️</span> Multi-Chat Coding Hub
       </button>
-      <button id="btn-turbo-freeze" class="btn-primary" title="Đóng băng toàn bộ tab ChatGPT đang chạy nền">
-        <span>⚡</span> Turbo Freeze — Dọn RAM Ngay
+      <button id="btn-turbo-freeze" class="btn-primary" title="Chỉ đóng băng tab nền đang thực sự nhàn rỗi">
+        <span>⚡</span> Safe Turbo Freeze — Dọn RAM
       </button>
       <div class="btn-group-row">
         <button id="btn-group-tabs" class="btn-secondary">📁 Gom Tab Group</button>
@@ -53,6 +52,7 @@
       <button id="tab-nav-stashed" class="nav-tab">💾 Phiên (<span id="count-stashed">0</span>)</button>
       <button id="tab-nav-projects" class="nav-tab">📁 Dự Án (<span id="count-projects">0</span>)</button>
       <button id="tab-nav-memory" class="nav-tab memory-nav">🧠 Memory</button>
+      <button id="tab-nav-runtime" class="nav-tab runtime-nav">⚙ Co-op</button>
     </nav>
 
     <div id="search-section" class="search-wrapper">
@@ -136,10 +136,46 @@
       </section>
     </main>
 
+    <main id="runtime-view" class="runtime-view" style="display:none;">
+      <section class="runtime-hero">
+        <div class="runtime-eyebrow">COOPERATIVE MULTI-TAB RUNTIME</div>
+        <h2>3 tab, 1 project, 1 scheduler</h2>
+        <div class="runtime-muted">Ba tab vẫn là ba agent, nhưng TabFlow quản lý chúng như một workspace chung thay vì ba renderer độc lập.</div>
+        <div class="runtime-controls-row">
+          <select id="runtime-project-select" class="runtime-select" aria-label="Project dùng chung"></select>
+          <select id="runtime-parallel-select" class="runtime-select" aria-label="Số generation đồng thời">
+            <option value="1">1 gen</option>
+            <option value="2" selected>2 gen</option>
+          </select>
+        </div>
+        <button id="runtime-start-btn" class="btn-primary runtime-start">⚙ Gắn 3 tab vào project & bật Co-op</button>
+      </section>
+
+      <section class="runtime-stat-grid">
+        <div class="runtime-stat"><strong id="runtime-pressure" class="runtime-pressure unknown">UNKNOWN</strong><small id="runtime-pressure-sub">Đang đọc RAM hệ thống…</small></div>
+        <div class="runtime-stat"><strong id="runtime-generators">0 generating / budget 1</strong><small>Runtime scheduler</small></div>
+      </section>
+
+      <section class="runtime-card">
+        <div class="runtime-card-head"><strong>Scheduling policy</strong></div>
+        <div class="runtime-toggle-row">
+          <label for="runtime-coop-toggle">Cooperative mode</label>
+          <input id="runtime-coop-toggle" type="checkbox" checked>
+        </div>
+        <div class="runtime-warning">Tab đang <b>typing</b> hoặc <b>generating</b> được bảo vệ tuyệt đối khỏi auto-discard và Safe Turbo Freeze. Khi RAM thấp, scheduler giảm generation budget nhưng không giết câu trả lời đang chạy.</div>
+      </section>
+
+      <section class="runtime-card">
+        <div class="runtime-card-head"><strong>Live agents</strong><span class="runtime-muted">Architect → Implementer → Reviewer</span></div>
+        <div id="runtime-agents" class="runtime-agent-list"><div class="runtime-empty">Đang đồng bộ trạng thái tab…</div></div>
+      </section>
+    </main>
+
     <div id="toast" class="toast">Đã thực hiện xong</div>
   </div>
 
   <script src="../sidepanel/index.js"></script>
   <script type="module" src="sidepanel-memory.js"></script>
+  <script type="module" src="sidepanel-runtime.js"></script>
 </body>
 </html>
