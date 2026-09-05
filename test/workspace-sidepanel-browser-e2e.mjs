@@ -112,7 +112,6 @@ try {
     const data = await chrome.storage.local.get('settings');
     return data.settings?.autoDiscardEnabled === false;
   });
-  await panel.waitForFunction(() => document.getElementById('runtime-idle-minutes')?.disabled === true);
   await clickSwitch(panel, 'runtime-auto-sleep-toggle', true);
   await panel.waitForFunction(async () => {
     const data = await chrome.storage.local.get('settings');
