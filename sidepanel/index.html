@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ChatGPT TabFlow Workspace</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <div class="brand">
+        <div class="brand-icon">⚡</div>
+        <div>
+          <div class="brand-title">
+            ChatGPT TabFlow
+            <span class="badge-version">v1.0</span>
+          </div>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button id="btn-refresh" class="icon-btn" title="Làm mới danh sách">🔄</button>
+        <button id="btn-options" class="icon-btn" title="Cài đặt">⚙️</button>
+      </div>
+    </header>
+
+    <!-- Stats Ribbon -->
+    <section class="stats-grid">
+      <div class="stat-card">
+        <span class="stat-label">RAM TIẾT KIỆM</span>
+        <span id="stat-ram-saved" class="stat-value">0 MB</span>
+        <span id="stat-freezes" class="stat-sub">0 lần đóng băng</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">TAB CHATGPT</span>
+        <span id="stat-total-tabs" class="stat-value">0 tabs</span>
+        <span id="stat-sleeping-tabs" class="stat-sub">0 đang ngủ đông</span>
+      </div>
+    </section>
+
+    <!-- Action Bar -->
+    <section class="actions-bar">
+      <button id="btn-open-coding-hub" class="btn-primary" style="background: linear-gradient(135deg, #8b5cf6, #3b82f6); box-shadow: 0 4px 12px rgba(139, 92, 246, 0.4);" title="Mở Bảng điều khiển Multi-Chat Coding Hub chia 2-4 khung chat song song">
+        <span>🖥️</span> Multi-Chat Coding Hub
+      </button>
+      <button id="btn-turbo-freeze" class="btn-primary" title="Đóng băng toàn bộ tab ChatGPT đang chạy nền">
+        <span>⚡</span> Turbo Freeze — Dọn RAM Ngay
+      </button>
+      <div class="btn-group-row">
+        <button id="btn-group-tabs" class="btn-secondary" title="Gom tất cả tab ChatGPT vào một Tab Group">
+          📁 Gom Tab Group
+        </button>
+        <button id="btn-stash-session" class="btn-secondary" title="Lưu lại tất cả link tab và đóng giải phóng 100% RAM">
+          💾 Lưu phiên (Stash)
+        </button>
+      </div>
+    </section>
+
+    <!-- Navigation Tabs -->
+    <nav class="view-nav">
+      <button id="tab-nav-active" class="nav-tab active">📑 Tab Đang Mở (<span id="count-open">0</span>)</button>
+      <button id="tab-nav-stashed" class="nav-tab">💾 Phiên Lưu (<span id="count-stashed">0</span>)</button>
+      <button id="tab-nav-projects" class="nav-tab">📁 Dự Án (<span id="count-projects">0</span>)</button>
+    </nav>
+
+    <!-- Search / Filter -->
+    <div id="search-section" class="search-wrapper">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="search-input" class="search-input" placeholder="Tìm kiếm tab hoặc chủ đề chat...">
+    </div>
+
+    <!-- Tab List View -->
+    <main id="active-tabs-view" class="list-container">
+      <div class="empty-state">
+        <span class="empty-icon">🤖</span>
+        <p>Đang tìm kiếm các tab ChatGPT...</p>
+      </div>
+    </main>
+
+    <!-- Stashed Sessions View (Hidden by default) -->
+    <main id="stashed-sessions-view" class="list-container" style="display: none;">
+      <div class="empty-state">
+        <span class="empty-icon">📦</span>
+        <p>Chưa có phiên làm việc nào được lưu.</p>
+      </div>
+    </main>
+
+    <!-- Project Vault View (Hidden by default) -->
+    <main id="projects-vault-view" class="list-container" style="display: none;">
+      <div style="padding: 4px 0 10px 0;">
+        <button id="btn-add-project" class="btn-primary" style="width: 100%; padding: 8px 12px; font-size: 12px;">
+          <span>➕</span> Thêm Dự Án Mới
+        </button>
+      </div>
+      <div id="projects-list" style="display: flex; flex-direction: column; gap: 8px;">
+        <!-- Projects will be rendered here -->
+      </div>
+    </main>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast">Đã thực hiện xong</div>
+  </div>
+
+  <script src="index.js"></script>
+</body>
+</html>

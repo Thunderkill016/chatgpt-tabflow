@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# Chrome Extension Developer metadata
+_metadata/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment
+.env
+.env.local

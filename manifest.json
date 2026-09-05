@@ -1,0 +1,94 @@
+{
+  "manifest_version": 3,
+  "name": "ChatGPT TabFlow — Anti-Lag & Multi-Tab Hub",
+  "version": "1.0.0",
+  "description": "Làm việc với nhiều tab ChatGPT mượt mà không bị lag. Đóng băng tab nền giải phóng RAM, ảo hóa DOM và Side Panel tập trung.",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "permissions": [
+    "tabs",
+    "storage",
+    "alarms",
+    "sidePanel",
+    "tabGroups",
+    "declarativeNetRequest"
+  ],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "ruleset_1",
+        "enabled": true,
+        "path": "rules/rules.json"
+      }
+    ]
+  },
+  "host_permissions": [
+    "https://chatgpt.com/*",
+    "https://chat.openai.com/*"
+  ],
+  "background": {
+    "service_worker": "service-worker.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    },
+    "default_title": "ChatGPT TabFlow"
+  },
+  "side_panel": {
+    "default_path": "sidepanel/index.html"
+  },
+  "options_ui": {
+    "page": "options/options.html",
+    "open_in_tab": true
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*"
+      ],
+      "js": [
+        "content-scripts/fetch-proxy.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*"
+      ],
+      "js": [
+        "content-scripts/booster.js"
+      ],
+      "css": [
+        "content-scripts/booster.css"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "commands": {
+    "open-side-panel": {
+      "suggested_key": {
+        "default": "Alt+C",
+        "mac": "Alt+C"
+      },
+      "description": "Mở ChatGPT TabFlow Side Panel"
+    },
+    "freeze-background-tabs": {
+      "suggested_key": {
+        "default": "Alt+F",
+        "mac": "Alt+F"
+      },
+      "description": "Đóng băng toàn bộ tab ChatGPT chạy ngầm"
+    }
+  }
+}

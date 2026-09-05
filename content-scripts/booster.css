@@ -1,0 +1,335 @@
+/* ==========================================================================
+   ChatGPT TabFlow Suite - In-Page UI & Booster Styles
+   Includes HUD Bar, Context Capacity Meter, Code Vault Drawer, and Animations
+   ========================================================================== */
+
+/* 1. Safe Offscreen Message Virtualization */
+article.tabflow-offscreen {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 180px;
+}
+
+/* 2. Code Block Display Optimization */
+pre code {
+  text-rendering: optimizeSpeed;
+  contain: paint;
+}
+
+/* 3. Typing Latency Shield */
+body.tabflow-typing-active #prompt-textarea,
+body.tabflow-typing-active textarea {
+  text-rendering: optimizeSpeed;
+}
+
+/* 4. Kill Heavy GPU Backdrop Blurs (Optional) */
+body.tabflow-kill-animations .backdrop-blur-md,
+body.tabflow-kill-animations .backdrop-blur-xl,
+body.tabflow-kill-animations .backdrop-blur-lg {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background-color: rgba(33, 33, 33, 0.96) !important;
+}
+
+/* 5. Smooth Textarea Input */
+#prompt-textarea,
+textarea[data-id="root"] {
+  text-rendering: optimizeSpeed !important;
+  font-smooth: auto !important;
+}
+
+/* ==========================================================================
+   FLOATING TABFLOW DEV HUD (Top-Right of ChatGPT Interface)
+   ========================================================================== */
+
+#tabflow-hud {
+  position: fixed;
+  top: 12px;
+  right: 64px;
+  z-index: 99998;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(15, 23, 42, 0.88);
+  backdrop-filter: blur(12px);
+  border: 1px solid #334155;
+  border-radius: 24px;
+  padding: 4px 10px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 12px;
+  color: #f8fafc;
+  user-select: none;
+}
+
+.hud-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* Context Capacity Meter Badge */
+.hud-meter {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-weight: 600;
+  font-size: 11px;
+}
+
+.hud-meter.green {
+  background: rgba(16, 185, 129, 0.18);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.hud-meter.yellow {
+  background: rgba(245, 158, 11, 0.18);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.hud-meter.red {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  animation: pulse-border 1.5s infinite;
+}
+
+@keyframes pulse-border {
+  0%, 100% { border-color: rgba(239, 68, 68, 0.4); }
+  50% { border-color: rgba(239, 68, 68, 0.9); }
+}
+
+/* HUD Buttons */
+.hud-btn {
+  background: #1e293b;
+  border: 1px solid #475569;
+  color: #f1f5f9;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+}
+
+.hud-btn:hover {
+  background: #334155;
+  border-color: #64748b;
+  transform: translateY(-1px);
+}
+
+.hud-btn.primary {
+  background: linear-gradient(135deg, #8b5cf6, #3b82f6);
+  border: none;
+  color: white;
+  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.4);
+}
+
+.hud-btn.primary:hover {
+  filter: brightness(1.15);
+}
+
+/* ==========================================================================
+   CODE VAULT DRAWER (Slide-out on Right Edge)
+   ========================================================================== */
+
+#tabflow-vault-drawer {
+  position: fixed;
+  top: 0;
+  right: -420px;
+  width: 400px;
+  height: 100vh;
+  background: #0f172a;
+  border-left: 2px solid #334155;
+  z-index: 99999;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -10px 0 30px rgba(0, 0, 0, 0.6);
+  transition: right 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: #f8fafc;
+}
+
+#tabflow-vault-drawer.open {
+  right: 0;
+}
+
+.vault-header {
+  padding: 14px 16px;
+  background: #1e293b;
+  border-bottom: 1px solid #334155;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.vault-title {
+  font-size: 14px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.vault-close-btn {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+}
+
+.vault-close-btn:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.vault-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.vault-empty {
+  text-align: center;
+  color: #64748b;
+  padding: 40px 20px;
+  font-size: 13px;
+}
+
+.vault-card {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.vault-card-header {
+  background: #0d1117;
+  padding: 6px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #334155;
+}
+
+.vault-card-lang {
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: #38bdf8;
+}
+
+.vault-card-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.vault-mini-btn {
+  background: #1e293b;
+  border: 1px solid #475569;
+  color: #e2e8f0;
+  font-size: 10.5px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.vault-mini-btn:hover {
+  background: #334155;
+  color: #34d399;
+}
+
+.vault-card-preview {
+  padding: 10px 12px;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #cbd5e1;
+  background: #090d16;
+  max-height: 120px;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* Toast Message */
+#tabflow-status-pill {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(15, 23, 42, 0.94);
+  color: #10b981;
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+#tabflow-status-pill.visible {
+  opacity: 1;
+}
+
+#tabflow-status-pill .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: #10b981;
+  box-shadow: 0 0 10px #10b981;
+}
+
+/* 6. Smart Code Folding */
+pre.tabflow-folded {
+  max-height: 260px !important;
+  overflow-y: hidden !important;
+  position: relative !important;
+  mask-image: linear-gradient(180deg, #000 65%, transparent 100%);
+  -webkit-mask-image: linear-gradient(180deg, #000 65%, transparent 100%);
+}
+
+.tabflow-fold-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0 12px 0;
+  padding: 4px 12px;
+  background: rgba(30, 41, 59, 0.85);
+  border: 1px solid #334155;
+  border-radius: 6px;
+  color: #38bdf8;
+  font-size: 11.5px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tabflow-fold-toggle:hover {
+  background: #334155;
+  color: #7dd3fc;
+  border-color: #475569;
+}
