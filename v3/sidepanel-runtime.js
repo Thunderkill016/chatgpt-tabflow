@@ -256,10 +256,28 @@ async function startCooperativeWorkspace() {
   }
 }
 
-runtimeNav?.addEventListener('click', async () => {
-  await loadProjects();
-  await refreshRuntime();
-});
+function showRuntimeView() {
+  for (const id of ['tab-nav-active', 'tab-nav-stashed', 'tab-nav-projects', 'tab-nav-memory']) {
+    document.getElementById(id)?.classList.remove('active');
+  }
+  runtimeNav?.classList.add('active');
+  for (const id of ['active-tabs-view', 'stashed-sessions-view', 'projects-vault-view', 'memory-view', 'search-section']) {
+    const node = document.getElementById(id);
+    if (node) node.style.display = 'none';
+  }
+  runtimeView.style.display = 'flex';
+  loadProjects().then(refreshRuntime).catch(() => {});
+}
+
+function hideRuntimeView() {
+  runtimeNav?.classList.remove('active');
+  if (runtimeView) runtimeView.style.display = 'none';
+}
+
+runtimeNav?.addEventListener('click', showRuntimeView);
+for (const id of ['tab-nav-active', 'tab-nav-stashed', 'tab-nav-projects', 'tab-nav-memory']) {
+  document.getElementById(id)?.addEventListener('click', hideRuntimeView);
+}
 
 startButton?.addEventListener('click', startCooperativeWorkspace);
 cooperativeToggle?.addEventListener('change', async () => {
@@ -279,6 +297,10 @@ parallelSelect?.addEventListener('change', async () => {
 
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') refreshRuntime().catch(() => {});
+});
+
+chrome.storage.onChanged.addListener(changes => {
+  if (changes.projectVault) loadProjects().catch(() => {});
 });
 
 loadProjects().catch(() => {});
