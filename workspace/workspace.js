@@ -310,8 +310,10 @@ function reconcileWorkspace() {
 
   panes.forEach((pane, index) => {
     let paneEl = paneElementById.get(pane.id);
-    if (!paneEl) paneEl = createPaneElement(pane);
-    chatGrid.appendChild(paneEl);
+    if (!paneEl) {
+      paneEl = createPaneElement(pane);
+      chatGrid.appendChild(paneEl);
+    }
     updatePaneElement(pane, index);
   });
 
