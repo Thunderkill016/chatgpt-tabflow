@@ -11,6 +11,7 @@
   let capturedCodeBlocks = [];
   let lastProxyStats = null;
   let lastAutoContinueTime = 0;
+  let foldHintShown = false;
   let runtimeMode = document.documentElement.dataset.tabflowRuntimeMode || 'interactive';
   let maintenanceTimer = null;
 
@@ -268,23 +269,33 @@ Tôi vừa chuyển sang tab mới vì cuộc trò chuyện cũ đã chạm ngư
     const turnEls = getTurnElements();
     if (turnEls.length <= 2) return;
     const pres = document.querySelectorAll('pre');
+    let newlyFolded = 0;
     for (let i = 0; i < pres.length; i++) {
       const pre = pres[i];
       if (pre.classList.contains('tabflow-fold-checked')) continue;
       pre.classList.add('tabflow-fold-checked');
       const lines = (pre.textContent || '').split('\n').length;
       if (lines <= 16) continue;
+
+      // Never insert controls next to React-owned <pre> nodes. Structural child
+      // mutations can confuse React reconciliation. A native Alt+click listener
+      // plus an extension class keeps folding outside React's child tree.
       pre.classList.add('tabflow-folded');
-      const btn = document.createElement('button');
-      btn.className = 'tabflow-fold-toggle';
-      btn.type = 'button';
-      btn.textContent = `👇 Xem đầy đủ (${lines} dòng)`;
-      btn.addEventListener('click', (ev) => {
-        ev.preventDefault();
+      pre.dataset.tabflowFoldLines = String(lines);
+      pre.addEventListener('click', event => {
+        if (!event.altKey) return;
+        event.preventDefault();
         const folded = pre.classList.toggle('tabflow-folded');
-        btn.textContent = folded ? `👇 Xem đầy đủ (${lines} dòng)` : '👆 Thu gọn code';
+        showStatusPill(folded
+          ? `👇 Đã thu gọn code (${lines} dòng)`
+          : `👆 Đã mở code (${lines} dòng)`);
       });
-      if (pre.parentNode) pre.parentNode.insertBefore(btn, pre.nextSibling);
+      newlyFolded += 1;
+    }
+
+    if (newlyFolded > 0 && !foldHintShown) {
+      foldHintShown = true;
+      showStatusPill('💡 Alt+click block code dài để mở/thu gọn');
     }
   }
 
