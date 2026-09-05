@@ -1,6 +1,6 @@
 /**
  * Verification Script for ChatGPT TabFlow Extension
- * Validates Manifest V3 specifications, file integrity, icon assets, and CSP compliance.
+ * Validates Manifest V3 specifications, file integrity, icon assets, and CSP/security invariants.
  */
 
 import fs from 'fs';
@@ -40,6 +40,8 @@ try {
   check(manifest.permissions && manifest.permissions.includes('sidePanel'), 'Declares sidePanel permission');
   check(manifest.permissions && manifest.permissions.includes('storage'), 'Declares storage permission');
   check(manifest.permissions && manifest.permissions.includes('tabGroups'), 'Declares tabGroups permission');
+  check(manifest.permissions && manifest.permissions.includes('declarativeNetRequest'), 'Declares DNR permission for scoped workspace session policy');
+  check(!manifest.declarative_net_request, 'No global static DNR ruleset is enabled');
 } catch (e) {
   check(false, `manifest.json is valid JSON: ${e.message}`);
 }
@@ -90,14 +92,22 @@ check(fs.existsSync(boosterCss), 'Content script booster.css exists');
 const swPath = path.join(rootDir, 'service-worker.js');
 check(fs.existsSync(swPath), 'Background service worker exists');
 
-// 8. DeclarativeNetRequest Rules
-const rulesPath = path.join(rootDir, 'rules', 'rules.json');
-check(fs.existsSync(rulesPath), 'declarativeNetRequest rules.json exists');
-try {
-  const rules = JSON.parse(fs.readFileSync(rulesPath, 'utf8'));
-  check(Array.isArray(rules) && rules.length >= 2, 'rules.json contains at least 2 rules for chatgpt & openai');
-} catch (e) {
-  check(false, `rules.json is valid JSON: ${e.message}`);
+// 8. Workspace frame-security policy
+const legacyRulesPath = path.join(rootDir, 'rules', 'rules.json');
+const framePolicyPath = path.join(rootDir, 'workspace', 'frame-policy.js');
+const framePolicyChromePath = path.join(rootDir, 'workspace', 'frame-policy-chrome.js');
+const framePolicyBootstrapPath = path.join(rootDir, 'workspace', 'frame-policy-bootstrap.js');
+check(!fs.existsSync(legacyRulesPath), 'Legacy global ChatGPT CSP/XFO stripping rules are removed');
+check(fs.existsSync(framePolicyPath), 'Scoped workspace frame-policy module exists');
+check(fs.existsSync(framePolicyChromePath), 'Session DNR workspace policy adapter exists');
+check(fs.existsSync(framePolicyBootstrapPath), 'Workspace secure bootstrap exists');
+
+if (fs.existsSync(framePolicyPath) && fs.existsSync(framePolicyChromePath)) {
+  const framePolicy = fs.readFileSync(framePolicyPath, 'utf8');
+  const framePolicyChrome = fs.readFileSync(framePolicyChromePath, 'utf8');
+  check(framePolicy.includes('tabIds: normalized'), 'Workspace header override is tab-scoped');
+  check(framePolicy.includes("resourceTypes: ['sub_frame']"), 'Workspace header override is subframe-scoped');
+  check(framePolicyChrome.includes('updateSessionRules'), 'Workspace header override is session-scoped');
 }
 
 // 9. Multi-Chat Coding Hub Workspace files
@@ -108,18 +118,27 @@ check(fs.existsSync(workspaceHtml), 'Workspace HTML exists');
 check(fs.existsSync(workspaceJs), 'Workspace JS exists');
 check(fs.existsSync(workspaceCss), 'Workspace CSS exists');
 
-// 10. Security & CSP Checks: No inline scripts in HTML files
+// 10. Security & CSP Checks: No inline event handlers in HTML files
 const htmlFiles = [sidePanelHtml, popupHtml, optionsHtml, workspaceHtml];
 for (const file of htmlFiles) {
   const content = fs.readFileSync(file, 'utf8');
-  const hasInlineScript = /<script\b[^>]*>([\s\S]*?)<\/script>/gi.test(content) &&
-    !content.match(/<script\s+src="[^"]+"><\/script>/gi);
   const hasEventHandlers = /on(click|load|change|submit|input)\s*=/gi.test(content);
   check(!hasEventHandlers, `No inline event handlers in ${path.basename(file)}`);
 }
 
-// 11. No eval() in any extension JS
-const jsFiles = [swPath, fetchProxyJs, boosterJs, sidePanelJs, popupJs, optionsJs, workspaceJs];
+// 11. No eval() in core extension JS
+const jsFiles = [
+  swPath,
+  fetchProxyJs,
+  boosterJs,
+  sidePanelJs,
+  popupJs,
+  optionsJs,
+  workspaceJs,
+  framePolicyPath,
+  framePolicyChromePath,
+  framePolicyBootstrapPath
+];
 for (const file of jsFiles) {
   const content = fs.readFileSync(file, 'utf8');
   check(!/\beval\s*\(/.test(content), `No eval() usage in ${path.basename(file)}`);
