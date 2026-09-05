@@ -133,8 +133,6 @@
       return;
     }
 
-    // Sau khi submit, nút Stop của ChatGPT có thể xuất hiện chậm vài giây.
-    // Không kết luận generation đã xong trong grace window này.
     if (!generationObserved && elapsed < GENERATION_START_GRACE_MS) {
       generationTimer = setTimeout(generationPoll, GENERATION_POLL_MS);
       return;
@@ -184,6 +182,10 @@
     if (event.isTrusted && isSendButton(event.target)) markSubmitIntent();
   }, true);
 
+  window.addEventListener('tabflow:workspace-submit-intent', () => {
+    markSubmitIntent();
+  });
+
   document.addEventListener('visibilitychange', () => {
     send('STATUS', {}, true);
   }, true);
@@ -205,8 +207,6 @@
   connect();
   send('STATUS', {}, true);
 
-  // Productive tabs heartbeat để service-worker restart không làm mất protection.
-  // Idle tabs không heartbeat, tránh N tab tạo traffic nền không cần thiết.
   setInterval(() => {
     if (state === 'generating' || state === 'typing') send('STATUS', {}, true);
   }, HEARTBEAT_MS);
