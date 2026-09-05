@@ -55,6 +55,9 @@ check(!coordinator.includes('Math.min(2, Number(patch.maxParallelGenerators'), '
 check(coordinator.includes('liveTabCount'), 'coordinator tracks dynamic connected tab count');
 check(coordinator.includes('connectedEntries'), 'coordinator distinguishes connected renderers');
 check(protection.includes('if (!entry) return false'), 'unknown runtime state fails safe against discard');
+check(protection.includes("chrome.tabs.sendMessage(tabId, { type: RUNTIME_PROBE_MESSAGE })"), 'discard protection requires a live renderer probe');
+check(protection.includes('if (!live) return false'), 'missing live renderer probe fails safe against discard');
+check(agent.includes('RUNTIME_PROBE_MESSAGE'), 'runtime agent exposes live discard-state probe');
 check(agent.includes('GENERATION_START_GRACE_MS'), 'generation detector has startup grace window');
 check(agent.includes('GENERATION_FINISH_MISSES'), 'generation detector requires stable completion');
 check(!agent.includes('RUNTIME_TASK'), 'unfinished pipeline executor is absent from runtime agent');
@@ -67,7 +70,8 @@ const runtimeFiles = [
   'runtime/coordinator.js',
   'content-scripts/runtime-agent.js',
   'content-scripts/booster.js',
-  'v3/sidepanel-runtime.js'
+  'v3/sidepanel-runtime.js',
+  'test/runtime-protection.test.mjs'
 ];
 
 for (const rel of runtimeFiles) {
@@ -83,9 +87,13 @@ for (const rel of runtimeFiles) {
   if (result.status !== 0) console.error(result.stderr || result.stdout);
 }
 
-const test = spawnSync(process.execPath, [path.join(root, 'test/runtime-policy.test.mjs')], { encoding: 'utf8' });
-check(test.status === 0, 'runtime policy unit tests pass');
-if (test.status !== 0) console.error(test.stderr || test.stdout);
+const policyTest = spawnSync(process.execPath, [path.join(root, 'test/runtime-policy.test.mjs')], { encoding: 'utf8' });
+check(policyTest.status === 0, 'runtime policy unit tests pass');
+if (policyTest.status !== 0) console.error(policyTest.stderr || policyTest.stdout);
+
+const protectionTest = spawnSync(process.execPath, [path.join(root, 'test/runtime-protection.test.mjs')], { encoding: 'utf8' });
+check(protectionTest.status === 0, 'runtime live-probe protection tests pass');
+if (protectionTest.status !== 0) console.error(protectionTest.stderr || protectionTest.stdout);
 
 console.log(`\n🏁 Runtime verification: ${passed}/${total} checks passed`);
 if (passed !== total) process.exitCode = 1;

@@ -5,6 +5,7 @@
   window.__tabflowRuntimeAgentInstalled = true;
 
   const PORT_NAME = 'TABFLOW_RUNTIME_CLIENT';
+  const RUNTIME_PROBE_MESSAGE = 'TABFLOW_RUNTIME_PROBE';
   const GENERATION_POLL_MS = 900;
   const GENERATION_MAX_MS = 10 * 60 * 1000;
   const GENERATION_START_GRACE_MS = 6500;
@@ -200,6 +201,14 @@
 
   window.addEventListener('pageshow', () => send('STATUS', {}, true), true);
   window.addEventListener('pagehide', () => send('STATUS', {}, true), true);
+
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type !== RUNTIME_PROBE_MESSAGE) return undefined;
+    // Destructive lifecycle operations (discard/takeover) ask the renderer for
+    // live state instead of trusting a possibly stale service-worker snapshot.
+    sendResponse({ success: true, payload: payload() });
+    return undefined;
+  });
 
   state = document.hasFocus() ? 'interactive' : 'idle';
   connect();

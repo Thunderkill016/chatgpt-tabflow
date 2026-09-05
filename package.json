@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "generate-icons": "node scripts/generate-icons.mjs",
-    "test": "node test/tabflow.test.mjs && node test/memory-core.test.mjs && node test/context-compiler.test.mjs && node test/continuity.test.mjs && node test/runtime-policy.test.mjs && node test/workspace-layout.test.mjs",
+    "test": "node test/tabflow.test.mjs && node test/memory-core.test.mjs && node test/context-compiler.test.mjs && node test/continuity.test.mjs && node test/runtime-policy.test.mjs && node test/runtime-protection.test.mjs && node test/workspace-layout.test.mjs",
     "verify": "node scripts/verify.mjs && node scripts/verify-memory.mjs && node scripts/verify-runtime.mjs && node scripts/verify-workspace.mjs",
     "quality": "npm run test && npm run verify"
   },

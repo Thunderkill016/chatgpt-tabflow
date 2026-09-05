@@ -1,6 +1,8 @@
-import { shouldProtectFromDiscard } from './policy.js';
+import { RUNTIME_STATES, shouldProtectFromDiscard } from './policy.js';
 
 export const RUNTIME_SESSION_KEY = 'tabflowRuntimeStateV3';
+const RUNTIME_PROBE_MESSAGE = 'TABFLOW_RUNTIME_PROBE';
+const VALID_RUNTIME_STATES = new Set(Object.values(RUNTIME_STATES));
 
 export async function readRuntimeSnapshot() {
   if (typeof chrome === 'undefined' || !chrome.storage?.session) return { tabs: {} };
@@ -19,13 +21,37 @@ export async function getRuntimeTabEntry(tabId) {
   return snapshot.tabs[String(tabId)] || null;
 }
 
+async function probeRuntimeTab(tabId) {
+  if (typeof chrome === 'undefined' || !chrome.tabs?.sendMessage) return null;
+  try {
+    const response = await chrome.tabs.sendMessage(tabId, { type: RUNTIME_PROBE_MESSAGE });
+    const payload = response?.success ? response.payload : null;
+    if (!payload || !VALID_RUNTIME_STATES.has(payload.state)) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
 export async function canDiscardRuntimeTab(tabId, now = Date.now()) {
   const entry = await getRuntimeTabEntry(tabId);
 
-  // Fail-safe: nếu content runtime chưa từng báo trạng thái cho tab này,
-  // TabFlow không được tự đoán rằng tab đang idle. Điều này đặc biệt quan trọng
-  // ngay sau khi extension reload, khi các ChatGPT tab cũ chưa reload content script.
+  // Fail-safe: if this tab never reported runtime state, never infer idle.
   if (!entry) return false;
 
-  return !shouldProtectFromDiscard(entry, now);
+  // Destructive tab lifecycle decisions require a live renderer probe. Storage
+  // is useful for coordination/UI, but can be stale after a service-worker
+  // restart. If the content script cannot answer, the state is unknown and the
+  // tab stays protected instead of being discarded on a stale idle snapshot.
+  const live = await probeRuntimeTab(tabId);
+  if (!live) return false;
+
+  const reconciled = {
+    ...entry,
+    ...live,
+    tabId,
+    connected: true,
+    updatedAt: now
+  };
+  return !shouldProtectFromDiscard(reconciled, now);
 }
