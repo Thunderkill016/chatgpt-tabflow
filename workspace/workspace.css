@@ -160,6 +160,7 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--accent-2);
   background: #111827;
   box-shadow: 0 4px 18px rgba(0, 0, 0, .15);
 }
+.chat-pane.focus-hidden { display: none; }
 .chat-pane:focus-within { border-color: #0ea5e9; }
 .chat-pane.focused-pane { border-color: #38bdf8; box-shadow: 0 0 0 1px rgba(56,189,248,.2); }
 
