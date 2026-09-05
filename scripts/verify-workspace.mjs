@@ -27,8 +27,11 @@ console.log('🖥️ Verifying TabFlow unified N-pane workspace UI/UX...');
 const manifest = JSON.parse(read('manifest.json'));
 const workspace = read('workspace/workspace.js');
 const layout = read('workspace/layout.js');
+const spotlightLayout = read('workspace/spotlight-layout.js');
+const spotlightResize = read('workspace/spotlight-resize.js');
 const html = read('workspace/index.html');
 const css = read('workspace/workspace.css');
+const spotlightCss = read('workspace/spotlight-resize.css');
 const bridge = read('content-scripts/workspace-frame-bridge.js');
 
 check(manifest.version === '3.2.0', 'manifest is v3.2.0');
@@ -40,6 +43,8 @@ check(html.includes('id="btn-sync-tabs"'), 'workspace exposes real-tab sync');
 check(html.includes('id="btn-takeover"'), 'workspace exposes safe takeover');
 check(html.includes('id="btn-focus-primary"'), 'workspace exposes first-class primary focus action');
 check(html.includes('id="status-primary"'), 'workspace exposes compact bottom status bar');
+check(html.includes('role="separator"'), 'spotlight splitter is keyboard-accessible separator');
+check(html.includes('spotlight-resize.js'), 'spotlight resize feature loads as isolated workspace module');
 check(workspace.includes("type: 'GET_TABS_DATA'"), 'workspace imports real open ChatGPT tabs');
 check(workspace.includes("type: 'DISCARD_TAB'"), 'takeover can hibernate original tabs');
 check(workspace.includes('primaryPaneId'), 'workspace persists a primary working pane');
@@ -54,18 +59,30 @@ check(!workspace.includes('.slice(0, 3)'), 'no three-pane cap');
 check(!/\binnerHTML\b/.test(workspace), 'workspace avoids dynamic innerHTML injection');
 check(!/on(?:click|change|input|load)\s*=/.test(html), 'workspace HTML has no inline handlers');
 check(layout.includes("'spotlight-3'"), 'layout policy has asymmetric three-pane spotlight mode');
-check(css.includes('[data-layout="spotlight-3"]'), 'CSS implements asymmetric three-pane spotlight layout');
+check(css.includes('[data-layout="spotlight-3"]'), 'base CSS implements asymmetric three-pane spotlight layout');
 check(css.includes('@container'), 'pane actions compact with container queries');
+check(spotlightCss.includes('--spotlight-primary-width'), 'resizable spotlight CSS uses persisted primary width');
+check(spotlightCss.includes('body.workspace-resizing iframe'), 'iframe pointer capture is protected during splitter drag');
+check(spotlightLayout.includes('SPOTLIGHT_SECONDARY_MIN_PX'), 'spotlight ratio policy preserves secondary minimum width');
+check(spotlightResize.includes('requestAnimationFrame'), 'splitter pointer updates are frame-throttled');
+check(spotlightResize.includes('ArrowLeft') && spotlightResize.includes('ArrowRight'), 'splitter supports keyboard resizing');
 check(bridge.includes('TABFLOW_WORKSPACE_FRAME_STATE'), 'frame bridge reports SPA URL/title state');
 check(bridge.includes('TABFLOW_WORKSPACE_FOCUS_COMPOSER'), 'frame bridge supports focused-pane composer handoff');
 
-for (const rel of ['workspace/workspace.js', 'workspace/layout.js', 'content-scripts/workspace-frame-bridge.js']) {
+for (const rel of [
+  'workspace/workspace.js',
+  'workspace/layout.js',
+  'workspace/spotlight-layout.js',
+  'workspace/spotlight-resize.js',
+  'content-scripts/workspace-frame-bridge.js'
+]) {
   const source = read(rel);
   check(!/\beval\s*\(/.test(source), `${rel}: no eval()`);
   check(!/\bnew\s+Function\s*\(/.test(source), `${rel}: no new Function()`);
   check(!/\binnerText\b/.test(source), `${rel}: no innerText`);
   check(!/\bgetComputedStyle\s*\(/.test(source), `${rel}: no forced style read`);
   check(!/\.offset(?:Height|Width|Top|Left|Parent)\b/.test(source), `${rel}: no offset* forced-layout read`);
+  check(!/getBoundingClientRect\s*\(/.test(source), `${rel}: no rect forced-layout read`);
   const syntax = spawnSync(process.execPath, ['--check', path.join(root, rel)], { encoding: 'utf8' });
   check(syntax.status === 0, `${rel}: node --check`);
   if (syntax.status !== 0) console.error(syntax.stderr || syntax.stdout);
