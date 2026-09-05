@@ -135,42 +135,43 @@ function postToTab(tabId, message) {
 }
 
 async function recomputeAndBroadcast() {
-  await mutationTail.catch(() => undefined);
-  const [snapshot, settings, pressure] = await Promise.all([
-    readSnapshot(),
-    loadSettings(),
-    sampleMemory()
-  ]);
+  return withMutation(async () => {
+    const [snapshot, settings, pressure] = await Promise.all([
+      readSnapshot(),
+      loadSettings(),
+      sampleMemory()
+    ]);
 
-  const entries = Object.values(snapshot.tabs || {});
-  const generatingCount = entries.filter(entry => entry.state === RUNTIME_STATES.GENERATING).length;
-  const parallelBudget = settings.cooperativeEnabled
-    ? recommendedParallelGenerators(pressure.level, settings.maxParallelGenerators)
-    : 2;
+    const entries = Object.values(snapshot.tabs || {});
+    const generatingCount = entries.filter(entry => entry.state === RUNTIME_STATES.GENERATING).length;
+    const parallelBudget = settings.cooperativeEnabled
+      ? recommendedParallelGenerators(pressure.level, settings.maxParallelGenerators)
+      : 2;
 
-  for (const entry of entries) {
-    const mode = settings.cooperativeEnabled
-      ? deriveExecutionMode(entry, { generatingCount, parallelBudget })
-      : (entry.focused || entry.visible ? 'interactive' : 'producer');
-    entry.mode = mode;
-    postToTab(entry.tabId, {
-      type: 'RUNTIME_MODE',
-      mode,
-      pressure: pressure.level,
-      parallelBudget,
-      generatingCount,
-      cooperativeEnabled: settings.cooperativeEnabled
-    });
-  }
+    for (const entry of entries) {
+      const mode = settings.cooperativeEnabled
+        ? deriveExecutionMode(entry, { generatingCount, parallelBudget })
+        : (entry.focused || entry.visible ? 'interactive' : 'producer');
+      entry.mode = mode;
+      postToTab(entry.tabId, {
+        type: 'RUNTIME_MODE',
+        mode,
+        pressure: pressure.level,
+        parallelBudget,
+        generatingCount,
+        cooperativeEnabled: settings.cooperativeEnabled
+      });
+    }
 
-  snapshot.tabs = Object.fromEntries(entries.map(entry => [String(entry.tabId), entry]));
-  snapshot.memory = pressure;
-  snapshot.parallelBudget = parallelBudget;
-  snapshot.generatingCount = generatingCount;
-  snapshot.cooperativeEnabled = settings.cooperativeEnabled;
-  snapshot.updatedAt = Date.now();
-  await writeSnapshot(snapshot);
-  return { snapshot, settings };
+    snapshot.tabs = Object.fromEntries(entries.map(entry => [String(entry.tabId), entry]));
+    snapshot.memory = pressure;
+    snapshot.parallelBudget = parallelBudget;
+    snapshot.generatingCount = generatingCount;
+    snapshot.cooperativeEnabled = settings.cooperativeEnabled;
+    snapshot.updatedAt = Date.now();
+    await writeSnapshot(snapshot);
+    return { snapshot, settings };
+  });
 }
 
 async function handlePortMessage(port, message) {
