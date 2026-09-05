@@ -1,7 +1,7 @@
 {
   "name": "chatgpt-tabflow",
-  "version": "3.1.0",
-  "description": "Local-first Cognitive Developer OS and cooperative performance layer for ChatGPT",
+  "version": "3.1.1",
+  "description": "Local-first Cognitive Developer OS and adaptive N-tab performance layer for ChatGPT",
   "type": "module",
   "scripts": {
     "generate-icons": "node scripts/generate-icons.mjs",
@@ -14,7 +14,7 @@
     "chrome-extension",
     "local-rag",
     "project-memory",
-    "cooperative-runtime",
+    "adaptive-runtime",
     "memory-saver",
     "tab-manager",
     "developer-tools"
