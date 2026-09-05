@@ -6,7 +6,7 @@
   "scripts": {
     "generate-icons": "node scripts/generate-icons.mjs",
     "test": "node test/tabflow.test.mjs && node test/memory-core.test.mjs && node test/runtime-policy.test.mjs",
-    "verify": "node scripts/verify.mjs && node scripts/verify-memory.mjs",
+    "verify": "node scripts/verify.mjs && node scripts/verify-memory.mjs && node scripts/verify-runtime.mjs",
     "quality": "npm run test && npm run verify"
   },
   "keywords": [
