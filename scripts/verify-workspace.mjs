@@ -33,8 +33,15 @@ const html = read('workspace/index.html');
 const css = read('workspace/workspace.css');
 const spotlightCss = read('workspace/spotlight-resize.css');
 const bridge = read('content-scripts/workspace-frame-bridge.js');
+const framePolicy = read('workspace/frame-policy.js');
+const framePolicyChrome = read('workspace/frame-policy-chrome.js');
+const framePolicyBootstrap = read('workspace/frame-policy-bootstrap.js');
+const framePolicyBackground = read('workspace/frame-policy-background.js');
+const wrapper = read('v3/service-worker.js');
 
 check(manifest.version === '3.2.0', 'manifest is v3.2.0');
+check(manifest.permissions.includes('declarativeNetRequest'), 'workspace frame policy keeps DNR permission');
+check(!manifest.declarative_net_request, 'manifest has no global static ChatGPT header-stripping ruleset');
 const bridgeEntry = manifest.content_scripts.find(item => item.js?.includes('content-scripts/workspace-frame-bridge.js'));
 check(Boolean(bridgeEntry), 'workspace frame bridge registered');
 check(bridgeEntry?.all_frames === true, 'workspace frame bridge runs in embedded ChatGPT frames');
@@ -44,7 +51,18 @@ check(html.includes('id="btn-takeover"'), 'workspace exposes safe takeover');
 check(html.includes('id="btn-focus-primary"'), 'workspace exposes first-class primary focus action');
 check(html.includes('id="status-primary"'), 'workspace exposes compact bottom status bar');
 check(html.includes('role="separator"'), 'spotlight splitter is keyboard-accessible separator');
-check(html.includes('spotlight-resize.js'), 'spotlight resize feature loads as isolated workspace module');
+check(html.includes('frame-policy-bootstrap.js'), 'secure frame policy bootstraps before workspace modules');
+check(!html.includes('src="workspace.js"'), 'workspace does not create iframes before frame policy is ready');
+check(framePolicyBootstrap.indexOf('ensureWorkspaceFramePolicyForCurrentTab') < framePolicyBootstrap.indexOf("import('./workspace.js')"), 'frame policy resolves before workspace iframe code imports');
+check(framePolicy.includes('tabIds: normalized'), 'header override is scoped to explicit workspace tab ids');
+check(framePolicy.includes("resourceTypes: ['sub_frame']"), 'header override is scoped to subframes');
+check(framePolicy.includes("requestDomains: [...WORKSPACE_FRAME_REQUEST_DOMAINS]"), 'header override is scoped to ChatGPT request domains');
+check(!framePolicy.includes('urlFilter'), 'frame rule avoids broad URL-filter scope');
+check(framePolicyChrome.includes('updateSessionRules'), 'workspace uses session-scoped DNR rules');
+check(framePolicyChrome.includes('removeRuleIds: [WORKSPACE_FRAME_RULE_ID]'), 'session policy atomically replaces the reserved rule');
+check(framePolicyBackground.includes('chrome.tabs.onRemoved.addListener'), 'closed workspace tabs trigger frame-policy cleanup');
+check(framePolicyBackground.includes('queueSync().catch'), 'service-worker restart reconciles workspace frame policy');
+check(wrapper.includes("workspace/frame-policy-background.js"), 'v3 service worker imports frame-policy lifecycle cleanup');
 check(workspace.includes("type: 'GET_TABS_DATA'"), 'workspace imports real open ChatGPT tabs');
 check(workspace.includes("type: 'DISCARD_TAB'"), 'takeover can hibernate original tabs');
 check(workspace.includes('primaryPaneId'), 'workspace persists a primary working pane');
@@ -74,6 +92,10 @@ for (const rel of [
   'workspace/layout.js',
   'workspace/spotlight-layout.js',
   'workspace/spotlight-resize.js',
+  'workspace/frame-policy.js',
+  'workspace/frame-policy-chrome.js',
+  'workspace/frame-policy-bootstrap.js',
+  'workspace/frame-policy-background.js',
   'content-scripts/workspace-frame-bridge.js'
 ]) {
   const source = read(rel);
@@ -88,9 +110,13 @@ for (const rel of [
   if (syntax.status !== 0) console.error(syntax.stderr || syntax.stdout);
 }
 
-const unit = spawnSync(process.execPath, [path.join(root, 'test/workspace-layout.test.mjs')], { encoding: 'utf8' });
-check(unit.status === 0, 'adaptive workspace layout unit tests pass');
-if (unit.status !== 0) console.error(unit.stderr || unit.stdout);
+const layoutUnit = spawnSync(process.execPath, [path.join(root, 'test/workspace-layout.test.mjs')], { encoding: 'utf8' });
+check(layoutUnit.status === 0, 'adaptive workspace layout unit tests pass');
+if (layoutUnit.status !== 0) console.error(layoutUnit.stderr || layoutUnit.stdout);
+
+const framePolicyUnit = spawnSync(process.execPath, [path.join(root, 'test/workspace-frame-policy.test.mjs')], { encoding: 'utf8' });
+check(framePolicyUnit.status === 0, 'workspace frame-policy unit tests pass');
+if (framePolicyUnit.status !== 0) console.error(framePolicyUnit.stderr || framePolicyUnit.stdout);
 
 console.log(`\n🏁 Workspace verification: ${passed}/${total} checks passed`);
 if (passed !== total) process.exitCode = 1;
