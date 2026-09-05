@@ -1,12 +1,12 @@
 {
   "name": "chatgpt-tabflow",
-  "version": "3.1.1",
-  "description": "Local-first Cognitive Developer OS and adaptive N-tab performance layer for ChatGPT",
+  "version": "3.2.0",
+  "description": "Local-first Cognitive Developer OS with adaptive N-tab runtime and unified multi-chat workspace for ChatGPT",
   "type": "module",
   "scripts": {
     "generate-icons": "node scripts/generate-icons.mjs",
-    "test": "node test/tabflow.test.mjs && node test/memory-core.test.mjs && node test/runtime-policy.test.mjs",
-    "verify": "node scripts/verify.mjs && node scripts/verify-memory.mjs && node scripts/verify-runtime.mjs",
+    "test": "node test/tabflow.test.mjs && node test/memory-core.test.mjs && node test/runtime-policy.test.mjs && node test/workspace-layout.test.mjs",
+    "verify": "node scripts/verify.mjs && node scripts/verify-memory.mjs && node scripts/verify-runtime.mjs && node scripts/verify-workspace.mjs",
     "quality": "npm run test && npm run verify"
   },
   "keywords": [
@@ -15,6 +15,7 @@
     "local-rag",
     "project-memory",
     "adaptive-runtime",
+    "unified-workspace",
     "memory-saver",
     "tab-manager",
     "developer-tools"
