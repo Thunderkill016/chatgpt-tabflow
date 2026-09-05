@@ -20,6 +20,16 @@ async function extensionId(browserContext) {
   return new URL(worker.url()).host;
 }
 
+async function clickSwitch(page, inputId, checked) {
+  const input = page.locator(`#${inputId}`);
+  if (await input.isChecked() === checked) return;
+  await page.locator(`#${inputId} + span`).click();
+  await page.waitForFunction(
+    ({ id, expected }) => document.getElementById(id)?.checked === expected,
+    { id: inputId, expected: checked }
+  );
+}
+
 try {
   context = await chromium.launchPersistentContext(userDataDir, {
     headless: false,
@@ -86,24 +96,24 @@ try {
   assert.equal(await panel.locator('text=Recommended budget').count(), 0, 'Runtime hides internal scheduler jargon');
   assert.equal(await panel.locator('.runtime-locked').textContent(), 'Luôn bật', 'productive-chat protection is visibly non-optional');
 
-  await panel.locator('#runtime-coop-toggle').uncheck();
+  await clickSwitch(panel, 'runtime-coop-toggle', false);
   await panel.waitForFunction(async () => {
     const data = await chrome.storage.local.get('tabflowRuntimeSettingsV3');
     return data.tabflowRuntimeSettingsV3?.cooperativeEnabled === false;
   });
-  await panel.locator('#runtime-coop-toggle').check();
+  await clickSwitch(panel, 'runtime-coop-toggle', true);
   await panel.waitForFunction(async () => {
     const data = await chrome.storage.local.get('tabflowRuntimeSettingsV3');
     return data.tabflowRuntimeSettingsV3?.cooperativeEnabled === true;
   });
 
-  await panel.locator('#runtime-auto-sleep-toggle').uncheck();
+  await clickSwitch(panel, 'runtime-auto-sleep-toggle', false);
   await panel.waitForFunction(async () => {
     const data = await chrome.storage.local.get('settings');
     return data.settings?.autoDiscardEnabled === false;
   });
-  assert.equal(await panel.locator('#runtime-idle-minutes').isDisabled(), true, 'idle threshold disables when auto-sleep is off');
-  await panel.locator('#runtime-auto-sleep-toggle').check();
+  await panel.waitForFunction(() => document.getElementById('runtime-idle-minutes')?.disabled === true);
+  await clickSwitch(panel, 'runtime-auto-sleep-toggle', true);
   await panel.waitForFunction(async () => {
     const data = await chrome.storage.local.get('settings');
     return data.settings?.autoDiscardEnabled === true;
