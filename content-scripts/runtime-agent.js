@@ -7,9 +7,10 @@
   const PORT_NAME = 'TABFLOW_RUNTIME_CLIENT';
   const GENERATION_POLL_MS = 900;
   const GENERATION_MAX_MS = 10 * 60 * 1000;
+  const GENERATION_START_GRACE_MS = 6500;
+  const GENERATION_FINISH_MISSES = 4;
   const TYPING_GRACE_MS = 1100;
-  const MAX_TASK_PROMPT_CHARS = 64000;
-  const MAX_TASK_OUTPUT_CHARS = 70000;
+  const HEARTBEAT_MS = 15000;
 
   let port = null;
   let state = 'idle';
@@ -17,11 +18,9 @@
   let typingTimer = null;
   let generationTimer = null;
   let generationStartedAt = 0;
+  let generationObserved = false;
   let generationStableMisses = 0;
   let lastStatusFingerprint = '';
-  let currentTaskId = '';
-  let currentTaskRole = '';
-  let taskDeliveryBusy = false;
 
   function getConversationId() {
     const match = location.pathname.match(/(?:^|\/)c\/([A-Za-z0-9_-]+)/);
@@ -45,21 +44,9 @@
       visible: document.visibilityState === 'visible',
       focused: document.hasFocus(),
       heapUsed: heapUsed(),
-      currentTaskId,
       lastActivityAt: Date.now(),
       ...extra
     };
-  }
-
-  function postRaw(message) {
-    const current = connect();
-    if (!current) return false;
-    try {
-      current.postMessage(message);
-      return true;
-    } catch {
-      return false;
-    }
   }
 
   function connect() {
@@ -68,15 +55,10 @@
       const current = chrome.runtime.connect({ name: PORT_NAME });
       port = current;
       current.onMessage.addListener(message => {
-        if (message?.type === 'RUNTIME_MODE') {
-          executionMode = message.mode || 'interactive';
-          document.documentElement.dataset.tabflowRuntimeMode = executionMode;
-          window.dispatchEvent(new CustomEvent('tabflow:runtime-mode', { detail: message }));
-          return;
-        }
-        if (message?.type === 'RUNTIME_TASK') {
-          acceptRuntimeTask(message.task).catch(error => failCurrentTask(error));
-        }
+        if (message?.type !== 'RUNTIME_MODE') return;
+        executionMode = message.mode || 'interactive';
+        document.documentElement.dataset.tabflowRuntimeMode = executionMode;
+        window.dispatchEvent(new CustomEvent('tabflow:runtime-mode', { detail: message }));
       });
       current.onDisconnect.addListener(() => {
         if (port === current) port = null;
@@ -90,10 +72,14 @@
 
   function send(type = 'STATUS', extra = {}, force = false) {
     const data = payload(extra);
-    const fingerprint = `${data.state}|${data.visible}|${data.focused}|${data.conversationId}|${data.title}|${data.currentTaskId}`;
+    const fingerprint = `${data.state}|${data.visible}|${data.focused}|${data.conversationId}|${data.title}`;
     if (!force && type === 'STATUS' && fingerprint === lastStatusFingerprint) return;
     lastStatusFingerprint = fingerprint;
-    postRaw({ type, payload: data });
+    const current = connect();
+    if (!current) return;
+    try {
+      current.postMessage({ type, payload: data });
+    } catch {}
   }
 
   function setState(next, extra = {}, force = false) {
@@ -109,11 +95,6 @@
       (node.getAttribute('contenteditable') === 'true' && Boolean(node.closest('form')));
   }
 
-  function getPromptEditor() {
-    return document.getElementById('prompt-textarea') ||
-      document.querySelector('form textarea, form [contenteditable="true"]');
-  }
-
   function isSendButton(target) {
     if (!(target instanceof Element)) return false;
     const button = target.closest('button');
@@ -123,224 +104,74 @@
     return /send|composer-submit/i.test(testId) || /send|gửi/i.test(aria);
   }
 
-  function getSendButton() {
-    return document.querySelector(
-      'button[data-testid="send-button"], button[data-testid*="composer-submit"], button[data-testid*="send"], button[aria-label*="Send" i], button[aria-label*="Gửi" i]'
-    );
-  }
-
-  function hasStopControl() {
+  function hasGenerationControl() {
     return Boolean(document.querySelector(
       'button[data-testid*="stop"], button[aria-label*="Stop" i], button[aria-label*="Dừng" i]'
     ));
   }
 
-  function waitFor(getter, timeoutMs, intervalMs = 120) {
-    const started = Date.now();
-    return new Promise(resolve => {
-      const tick = () => {
-        const value = getter();
-        if (value) {
-          resolve(value);
-          return;
-        }
-        if (Date.now() - started >= timeoutMs) {
-          resolve(null);
-          return;
-        }
-        setTimeout(tick, intervalMs);
-      };
-      tick();
-    });
-  }
-
-  function setTextareaValue(editor, text) {
-    const proto = editor instanceof HTMLTextAreaElement
-      ? HTMLTextAreaElement.prototype
-      : HTMLInputElement.prototype;
-    const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
-    if (descriptor?.set) descriptor.set.call(editor, text);
-    else editor.value = text;
-    editor.dispatchEvent(new InputEvent('input', {
-      bubbles: true,
-      composed: true,
-      inputType: 'insertText',
-      data: text
-    }));
-    return true;
-  }
-
-  function setContentEditableValue(editor, text) {
-    try {
-      editor.focus({ preventScroll: true });
-    } catch {
-      editor.focus();
-    }
-
-    const selection = window.getSelection();
-    if (selection) {
-      const range = document.createRange();
-      range.selectNodeContents(editor);
-      selection.removeAllRanges();
-      selection.addRange(range);
-    }
-
-    let inserted = false;
-    try {
-      inserted = Boolean(document.execCommand('insertText', false, text));
-    } catch {}
-
-    if (!inserted) {
-      editor.textContent = text;
-      editor.dispatchEvent(new InputEvent('input', {
-        bubbles: true,
-        composed: true,
-        inputType: 'insertText',
-        data: text
-      }));
-    }
-    return true;
-  }
-
-  function setEditorText(editor, text) {
-    if (!editor) return false;
-    const clean = String(text || '').slice(0, MAX_TASK_PROMPT_CHARS);
-    if (editor instanceof HTMLTextAreaElement || editor instanceof HTMLInputElement) {
-      return setTextareaValue(editor, clean);
-    }
-    if (editor.getAttribute('contenteditable') === 'true') {
-      return setContentEditableValue(editor, clean);
-    }
-    return false;
-  }
-
-  function captureLatestAssistant() {
-    const messages = document.querySelectorAll('[data-message-author-role="assistant"]');
-    if (messages.length > 0) {
-      return String(messages[messages.length - 1].textContent || '').trim().slice(0, MAX_TASK_OUTPUT_CHARS);
-    }
-    const turns = document.querySelectorAll('article');
-    if (turns.length > 0) {
-      return String(turns[turns.length - 1].textContent || '').trim().slice(0, MAX_TASK_OUTPUT_CHARS);
-    }
-    return '';
-  }
-
-  function completeGeneration() {
-    const finishedTaskId = currentTaskId;
-    const output = finishedTaskId ? captureLatestAssistant() : '';
-    currentTaskId = '';
-    currentTaskRole = '';
-    state = document.hasFocus() ? 'interactive' : 'idle';
-    send('STATUS', {}, true);
-
-    if (finishedTaskId) {
-      postRaw({
-        type: 'TASK_COMPLETE',
-        taskId: finishedTaskId,
-        output,
-        focused: document.hasFocus(),
-        conversationId: getConversationId()
-      });
-    }
+  function finishGeneration() {
+    generationTimer = null;
+    generationObserved = false;
+    generationStableMisses = 0;
+    setState(document.hasFocus() ? 'interactive' : 'idle', { protectUntil: 0 }, true);
   }
 
   function generationPoll() {
     if (state !== 'generating') return;
-    if (Date.now() - generationStartedAt > GENERATION_MAX_MS) {
-      generationTimer = null;
-      if (currentTaskId) {
-        failCurrentTask(new Error('ChatGPT generation vượt giới hạn 10 phút'));
-      } else {
-        completeGeneration();
-      }
+
+    const elapsed = Date.now() - generationStartedAt;
+    if (elapsed > GENERATION_MAX_MS) {
+      finishGeneration();
       return;
     }
 
-    if (hasStopControl()) {
+    if (hasGenerationControl()) {
+      generationObserved = true;
       generationStableMisses = 0;
-    } else {
-      generationStableMisses += 1;
-      if (generationStableMisses >= 3) {
-        generationTimer = null;
-        completeGeneration();
-        return;
-      }
+      generationTimer = setTimeout(generationPoll, GENERATION_POLL_MS);
+      return;
     }
+
+    // Sau khi submit, nút Stop của ChatGPT có thể xuất hiện chậm vài giây.
+    // Không kết luận generation đã xong trong grace window này.
+    if (!generationObserved && elapsed < GENERATION_START_GRACE_MS) {
+      generationTimer = setTimeout(generationPoll, GENERATION_POLL_MS);
+      return;
+    }
+
+    generationStableMisses += 1;
+    if (generationStableMisses >= GENERATION_FINISH_MISSES) {
+      finishGeneration();
+      return;
+    }
+
     generationTimer = setTimeout(generationPoll, GENERATION_POLL_MS);
   }
 
-  function markSubmitIntent(taskId = '') {
+  function markSubmitIntent() {
     if (typingTimer) {
       clearTimeout(typingTimer);
       typingTimer = null;
     }
-    if (taskId) currentTaskId = taskId;
+
     state = 'generating';
     generationStartedAt = Date.now();
+    generationObserved = false;
     generationStableMisses = 0;
-    send('SUBMIT_INTENT', { protectUntil: Date.now() + 45000, currentTaskId }, true);
+    send('SUBMIT_INTENT', { protectUntil: Date.now() + 45000 }, true);
+
     if (generationTimer) clearTimeout(generationTimer);
     generationTimer = setTimeout(generationPoll, 700);
-  }
-
-  async function acceptRuntimeTask(task) {
-    if (!task?.id || !task?.prompt) return;
-    if (taskDeliveryBusy || state === 'generating' || state === 'typing' || currentTaskId) {
-      postRaw({ type: 'TASK_FAILED', taskId: task.id, error: 'Target tab đang bận' });
-      return;
-    }
-
-    taskDeliveryBusy = true;
-    currentTaskId = String(task.id);
-    currentTaskRole = String(task.toRole || '');
-    try {
-      const editor = await waitFor(getPromptEditor, 12000, 160);
-      if (!editor) throw new Error('Không tìm thấy ChatGPT prompt editor');
-      if (!setEditorText(editor, task.prompt)) throw new Error('Không thể nạp task vào prompt editor');
-
-      const sendButton = await waitFor(() => {
-        const button = getSendButton();
-        return button && !button.disabled ? button : null;
-      }, 7000, 140);
-      if (!sendButton) throw new Error('Prompt đã nạp nhưng nút Send chưa sẵn sàng');
-
-      postRaw({ type: 'TASK_ACK', taskId: currentTaskId, role: currentTaskRole });
-      markSubmitIntent(currentTaskId);
-      sendButton.click();
-    } catch (error) {
-      failCurrentTask(error);
-    } finally {
-      taskDeliveryBusy = false;
-    }
-  }
-
-  function failCurrentTask(error) {
-    const taskId = currentTaskId;
-    currentTaskId = '';
-    currentTaskRole = '';
-    if (generationTimer) {
-      clearTimeout(generationTimer);
-      generationTimer = null;
-    }
-    if (state === 'generating') state = document.hasFocus() ? 'interactive' : 'idle';
-    send('STATUS', {}, true);
-    if (taskId) {
-      postRaw({
-        type: 'TASK_FAILED',
-        taskId,
-        error: error?.message || String(error)
-      });
-    }
   }
 
   document.addEventListener('input', event => {
     if (!isPromptEditor(event.target)) return;
     if (state !== 'generating') setState('typing', {}, true);
-    if (typingTimeout) clearTimeout(typingTimer);
+    if (typingTimer) clearTimeout(typingTimer);
     typingTimer = setTimeout(() => {
       typingTimer = null;
-      if (state === 'typing') setState(document.hasFocus() ? 'interactive' : 'idle', {}, true);
+      if (state === 'typing') setState(document.hasFocus() ? 'interactive' : 'idle', { protectUntil: 0 }, true);
     }, TYPING_GRACE_MS);
   }, true);
 
@@ -374,7 +205,9 @@
   connect();
   send('STATUS', {}, true);
 
+  // Productive tabs heartbeat để service-worker restart không làm mất protection.
+  // Idle tabs không heartbeat, tránh N tab tạo traffic nền không cần thiết.
   setInterval(() => {
-    if (state === 'generating' || state === 'typing' || currentTaskId) send('STATUS', {}, true);
-  }, 15000);
+    if (state === 'generating' || state === 'typing') send('STATUS', {}, true);
+  }, HEARTBEAT_MS);
 })();
