@@ -21,5 +21,11 @@ export async function getRuntimeTabEntry(tabId) {
 
 export async function canDiscardRuntimeTab(tabId, now = Date.now()) {
   const entry = await getRuntimeTabEntry(tabId);
+
+  // Fail-safe: nếu content runtime chưa từng báo trạng thái cho tab này,
+  // TabFlow không được tự đoán rằng tab đang idle. Điều này đặc biệt quan trọng
+  // ngay sau khi extension reload, khi các ChatGPT tab cũ chưa reload content script.
+  if (!entry) return false;
+
   return !shouldProtectFromDiscard(entry, now);
 }
