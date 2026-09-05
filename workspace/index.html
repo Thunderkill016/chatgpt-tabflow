@@ -42,7 +42,20 @@
     </div>
   </header>
 
-  <main id="chat-grid" class="chat-grid" aria-label="Các cuộc chat trong workspace"></main>
+  <main id="chat-grid" class="chat-grid" aria-label="Các cuộc chat trong workspace">
+    <div
+      id="spotlight-separator"
+      class="spotlight-separator"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Thay đổi độ rộng pane chính"
+      aria-valuemin="48"
+      aria-valuemax="78"
+      aria-valuenow="64"
+      tabindex="-1"
+      hidden
+    ><span class="spotlight-separator-grip" aria-hidden="true"></span></div>
+  </main>
 
   <section id="empty-state" class="empty-state" hidden>
     <div class="empty-icon">🧩</div>
@@ -99,5 +112,6 @@
   </template>
 
   <script type="module" src="workspace.js"></script>
+  <script type="module" src="spotlight-resize.js"></script>
 </body>
 </html>
