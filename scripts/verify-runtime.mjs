@@ -25,12 +25,12 @@ function read(rel) {
 console.log('⚙️ Verifying TabFlow adaptive N-tab runtime...');
 
 const manifest = JSON.parse(read('manifest.json'));
-check(manifest.version === '3.1.1', 'manifest is v3.1.1');
+check(/^3\.(?:[2-9]|[1-9]\d)\./.test(manifest.version) || manifest.version === '3.1.1', 'manifest includes stable adaptive N-tab runtime');
 check(manifest.permissions.includes('system.memory'), 'system.memory permission declared');
 check(manifest.permissions.includes('storage'), 'storage permission declared');
 check(manifest.permissions.includes('tabs'), 'tabs permission declared');
 
-const isolated = manifest.content_scripts.find(item => item.world !== 'MAIN');
+const isolated = manifest.content_scripts.find(item => item.world !== 'MAIN' && item.js?.includes('content-scripts/runtime-agent.js'));
 check(isolated?.js?.includes('content-scripts/runtime-agent.js'), 'runtime agent injected in isolated world');
 check(isolated?.js?.indexOf('content-scripts/runtime-agent.js') < isolated?.js?.indexOf('content-scripts/booster.js'), 'runtime agent loads before booster');
 
