@@ -47,8 +47,8 @@ const coordinator = read('runtime/coordinator.js');
 const agent = read('content-scripts/runtime-agent.js');
 const protection = read('runtime/protection.js');
 
-check(sidepanel.includes('ADAPTIVE N-TAB RUNTIME'), 'side panel clearly exposes N-tab runtime');
-check(sidepanel.includes('Gắn tất cả tab ChatGPT'), 'workspace action binds all ChatGPT tabs');
+check(sidepanel.includes('id="tab-nav-runtime"') && sidepanel.includes('id="runtime-view"'), 'side panel clearly exposes adaptive runtime');
+check(sidepanel.includes('id="runtime-start-btn"') && sidepanelRuntime.includes('bindAllTabsToWorkspace'), 'workspace action binds all ChatGPT tabs');
 check(!sidepanel.includes('3 tab, 1 project'), 'UI is not hard-coded to 3 tabs');
 check(!sidepanelRuntime.includes('.slice(0, 3)'), 'side panel does not truncate workspace to 3 tabs');
 check(!coordinator.includes('Math.min(2, Number(patch.maxParallelGenerators'), 'coordinator no longer hard caps configured target at 2');
