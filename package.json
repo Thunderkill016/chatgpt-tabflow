@@ -1,7 +1,7 @@
 {
   "name": "chatgpt-tabflow",
-  "version": "3.2.0",
-  "description": "Local-first Cognitive Developer OS with adaptive N-tab runtime and unified multi-chat workspace for ChatGPT",
+  "version": "3.2.1",
+  "description": "Local-first Cognitive Developer OS with adaptive N-tab runtime and lightweight unified remote-chat workspace for ChatGPT",
   "type": "module",
   "scripts": {
     "generate-icons": "node scripts/generate-icons.mjs",
@@ -16,6 +16,7 @@
     "project-memory",
     "adaptive-runtime",
     "unified-workspace",
+    "remote-chat-console",
     "memory-saver",
     "tab-manager",
     "developer-tools"
