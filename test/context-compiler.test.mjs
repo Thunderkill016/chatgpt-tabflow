@@ -31,6 +31,23 @@ const spill = compileContext({
 assert.ok(spill.selected.some(item => item.id === 'retrieval-1'), 'unused empty-tier quota spills into retrieval');
 assert.ok(spill.usedTokens <= 120, 'spillover stays inside budget');
 
+const tierOrder = compileContext({
+  maxTokens: 200,
+  candidates: [
+    { id: 'authority-1', tier: 'authority', priority: 3, text: 'a'.repeat(80) },
+    { id: 'authority-2', tier: 'authority', priority: 2, text: 'b'.repeat(80) },
+    { id: 'authority-spill', tier: 'authority', priority: 1, text: 'c'.repeat(80) },
+    { id: 'retrieval-reserved', tier: 'retrieval', priority: 10, score: 10, text: 'r'.repeat(200) }
+  ],
+  estimateTokens
+});
+const lastAuthorityIndex = Math.max(...tierOrder.selected
+  .map((item, index) => item.tier === 'authority' ? index : -1));
+const firstRetrievalIndex = tierOrder.selected.findIndex(item => item.tier === 'retrieval');
+assert.ok(firstRetrievalIndex >= 0, 'regression fixture selects retrieval during reserved pass');
+assert.ok(tierOrder.selected.some(item => item.id === 'authority-spill'), 'regression fixture selects authority during spillover');
+assert.ok(lastAuthorityIndex < firstRetrievalIndex, 'all authority spillover stays before retrieved evidence in final context order');
+
 const stable = compileContext({
   maxTokens: 80,
   candidates: [

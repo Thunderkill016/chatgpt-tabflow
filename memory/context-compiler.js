@@ -49,6 +49,14 @@ function stableOrder(candidates) {
     .map(item => item.candidate);
 }
 
+function canonicalTierOrder(selected) {
+  const ordered = [];
+  for (const tier of CONTEXT_TIERS) {
+    ordered.push(...stableOrder(selected.filter(candidate => candidate.tier === tier)));
+  }
+  return ordered;
+}
+
 /**
  * Deterministically compile project context into a strict token budget.
  *
@@ -105,8 +113,14 @@ export function compileContext({
     for (const candidate of groups.get(tier)) take(candidate, tier, ceiling);
   }
 
+  // Selection happens in two passes, so append order is not itself semantic
+  // order: retrieval selected in pass 1 could otherwise appear before authority
+  // added during spillover. Canonicalize only presentation order; the selected
+  // set and every budget accounting value stay unchanged.
+  const orderedSelected = canonicalTierOrder(selected);
+
   return {
-    selected,
+    selected: orderedSelected,
     usedTokens,
     remainingTokens: Math.max(0, ceiling - usedTokens),
     usedByTier,
