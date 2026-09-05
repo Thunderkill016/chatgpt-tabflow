@@ -35,7 +35,7 @@ jobs:
         with:
           node-version: '24'
       - name: Install Playwright harness
-        run: npm install --no-save --no-package-lock playwright@1.55.0
+        run: npm install --no-save --no-package-lock playwright@1.63.0
       - name: Install Chromium and system dependencies
         run: npx playwright install --with-deps chromium
       - name: Run unpacked-extension browser E2E
