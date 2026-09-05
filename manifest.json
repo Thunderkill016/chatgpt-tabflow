@@ -68,6 +68,9 @@
         "content-scripts/frame-scope-gate.js",
         "content-scripts/memory-client.js"
       ],
+      "css": [
+        "content-scripts/memory-status.css"
+      ],
       "run_at": "document_idle",
       "all_frames": true
     },
