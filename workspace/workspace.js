@@ -29,6 +29,7 @@ let saveTimer = null;
 let toastTimer = null;
 let syncTimer = null;
 let resizeTimer = null;
+const paneElementById = new Map();
 const frameByPaneId = new Map();
 const paneIdByWindow = new Map();
 const readyPanes = new Set();
@@ -93,9 +94,7 @@ async function loadSavedState() {
         createdAt: Number(item.createdAt || Date.now())
       }));
   }
-  if ([...densitySelect.options].some(option => option.value === density)) {
-    densitySelect.value = density;
-  }
+  if ([...densitySelect.options].some(option => option.value === density)) densitySelect.value = density;
 }
 
 async function getOpenChatTabs() {
@@ -137,7 +136,7 @@ async function syncOpenTabs({ notify = false } = {}) {
   try {
     const tabs = await getOpenChatTabs();
     const added = mergeOpenTabs(tabs);
-    renderWorkspace();
+    reconcileWorkspace();
     scheduleSave();
     if (notify) showToast(added > 0 ? `Đã thêm ${added} tab mới vào workspace.` : 'Workspace đã đồng bộ với các tab đang mở.');
   } catch (error) {
@@ -154,7 +153,7 @@ function addLocalPane() {
     url: DEFAULT_CHAT_URL,
     createdAt: Date.now()
   });
-  renderWorkspace();
+  reconcileWorkspace();
   scheduleSave();
 }
 
@@ -169,7 +168,7 @@ function paneMetaText(pane) {
 
 function focusPane(paneId) {
   focusedPaneId = focusedPaneId === paneId ? null : paneId;
-  renderWorkspace();
+  reconcileWorkspace();
   if (focusedPaneId) {
     requestAnimationFrame(() => {
       const frame = frameByPaneId.get(focusedPaneId);
@@ -182,7 +181,7 @@ function removePane(paneId) {
   panes = panes.filter(pane => pane.id !== paneId);
   readyPanes.delete(paneId);
   if (focusedPaneId === paneId) focusedPaneId = null;
-  renderWorkspace();
+  reconcileWorkspace();
   scheduleSave();
 }
 
@@ -194,37 +193,28 @@ function openSource(pane) {
   chrome.tabs.create({ url: pane.url });
 }
 
-function createPaneElement(pane, index) {
-  const fragment = paneTemplate.content.cloneNode(true);
-  const paneEl = fragment.querySelector('.chat-pane');
-  const indexEl = fragment.querySelector('.pane-index');
-  const titleEl = fragment.querySelector('.pane-title');
-  const metaEl = fragment.querySelector('.pane-meta');
-  const loader = fragment.querySelector('.pane-loading');
-  const frame = fragment.querySelector('iframe');
-  const focusButton = fragment.querySelector('.btn-focus');
-  const composerButton = fragment.querySelector('.btn-composer');
-  const reloadButton = fragment.querySelector('.btn-reload');
-  const sourceButton = fragment.querySelector('.btn-source');
-  const removeButton = fragment.querySelector('.btn-remove');
+function createPaneElement(pane) {
+  const paneEl = paneTemplate.content.firstElementChild.cloneNode(true);
+  const loader = paneEl.querySelector('.pane-loading');
+  const frame = paneEl.querySelector('iframe');
+  const focusButton = paneEl.querySelector('.btn-focus');
+  const composerButton = paneEl.querySelector('.btn-composer');
+  const reloadButton = paneEl.querySelector('.btn-reload');
+  const sourceButton = paneEl.querySelector('.btn-source');
+  const removeButton = paneEl.querySelector('.btn-remove');
 
   paneEl.dataset.paneId = pane.id;
-  if (focusedPaneId === pane.id) paneEl.classList.add('focused-pane');
-  indexEl.textContent = String(index + 1);
-  titleEl.textContent = pane.title;
-  metaEl.textContent = paneMetaText(pane);
   frame.src = pane.url;
-  frame.title = `${pane.title} — TabFlow pane ${index + 1}`;
-  frame.loading = panes.length > 8 && focusedPaneId !== pane.id ? 'lazy' : 'eager';
+  frame.dataset.currentUrl = pane.url;
+  frame.loading = panes.length > 8 ? 'lazy' : 'eager';
 
   frame.addEventListener('load', () => {
     loader.classList.add('hidden');
     readyPanes.add(pane.id);
+    if (frame.contentWindow) paneIdByWindow.set(frame.contentWindow, pane.id);
     updateStats();
   });
 
-  focusButton.textContent = focusedPaneId === pane.id ? '⤢' : '⛶';
-  focusButton.title = focusedPaneId === pane.id ? 'Trở lại toàn bộ workspace' : 'Phóng to pane';
   focusButton.addEventListener('click', () => focusPane(pane.id));
   paneEl.addEventListener('dblclick', event => {
     if (event.target.closest('button')) return;
@@ -239,14 +229,40 @@ function createPaneElement(pane, index) {
     readyPanes.delete(pane.id);
     loader.classList.remove('hidden');
     frame.src = pane.url;
+    frame.dataset.currentUrl = pane.url;
     updateStats();
   });
 
   sourceButton.addEventListener('click', () => openSource(pane));
   removeButton.addEventListener('click', () => removePane(pane.id));
 
+  paneElementById.set(pane.id, paneEl);
   frameByPaneId.set(pane.id, frame);
-  return fragment;
+  if (frame.contentWindow) paneIdByWindow.set(frame.contentWindow, pane.id);
+  return paneEl;
+}
+
+function updatePaneElement(pane, index) {
+  const paneEl = paneElementById.get(pane.id);
+  if (!paneEl) return;
+  const frame = frameByPaneId.get(pane.id);
+  const indexEl = paneEl.querySelector('.pane-index');
+  const titleEl = paneEl.querySelector('.pane-title');
+  const metaEl = paneEl.querySelector('.pane-meta');
+  const focusButton = paneEl.querySelector('.btn-focus');
+
+  indexEl.textContent = String(index + 1);
+  titleEl.textContent = pane.title;
+  metaEl.textContent = paneMetaText(pane);
+  paneEl.classList.toggle('focus-hidden', Boolean(focusedPaneId && focusedPaneId !== pane.id));
+  paneEl.classList.toggle('focused-pane', focusedPaneId === pane.id);
+  focusButton.textContent = focusedPaneId === pane.id ? '⤢' : '⛶';
+  focusButton.title = focusedPaneId === pane.id ? 'Trở lại toàn bộ workspace' : 'Phóng to pane';
+
+  if (frame && !readyPanes.has(pane.id) && frame.dataset.currentUrl !== pane.url) {
+    frame.src = pane.url;
+    frame.dataset.currentUrl = pane.url;
+  }
 }
 
 function applyGrid() {
@@ -281,23 +297,23 @@ function updateStats() {
     : `${panes.length} cuộc chat trên một màn hình · ${sleeping} tab gốc đang ngủ`;
 }
 
-function renderWorkspace() {
-  frameByPaneId.clear();
-  paneIdByWindow.clear();
-  chatGrid.replaceChildren();
-
-  const visiblePanes = focusedPaneId
-    ? panes.filter(pane => pane.id === focusedPaneId)
-    : panes;
-
-  visiblePanes.forEach((pane, index) => {
-    const fragment = createPaneElement(pane, focusedPaneId ? panes.findIndex(item => item.id === pane.id) : index);
-    chatGrid.appendChild(fragment);
-  });
-
-  for (const [paneId, frame] of frameByPaneId.entries()) {
-    if (frame.contentWindow) paneIdByWindow.set(frame.contentWindow, paneId);
+function reconcileWorkspace() {
+  const validIds = new Set(panes.map(pane => pane.id));
+  for (const [paneId, paneEl] of paneElementById.entries()) {
+    if (validIds.has(paneId)) continue;
+    const frame = frameByPaneId.get(paneId);
+    if (frame?.contentWindow) paneIdByWindow.delete(frame.contentWindow);
+    paneElementById.delete(paneId);
+    frameByPaneId.delete(paneId);
+    paneEl.remove();
   }
+
+  panes.forEach((pane, index) => {
+    let paneEl = paneElementById.get(pane.id);
+    if (!paneEl) paneEl = createPaneElement(pane);
+    chatGrid.appendChild(paneEl);
+    updatePaneElement(pane, index);
+  });
 
   emptyState.hidden = panes.length > 0;
   chatGrid.hidden = panes.length === 0;
@@ -346,11 +362,13 @@ window.addEventListener('message', event => {
   const pane = panes.find(item => item.id === paneId);
   if (!pane) return;
 
+  const frame = frameByPaneId.get(paneId);
   const nextUrl = safeUrl(event.data.href);
   const nextTitle = cleanTitle(event.data.title, pane.title);
   let changed = false;
   if (nextUrl !== pane.url) {
     pane.url = nextUrl;
+    if (frame) frame.dataset.currentUrl = nextUrl;
     changed = true;
   }
   if (nextTitle && nextTitle !== 'ChatGPT' && nextTitle !== pane.title) {
@@ -358,11 +376,7 @@ window.addEventListener('message', event => {
     changed = true;
   }
   if (changed) scheduleSave();
-
-  const paneEl = chatGrid.querySelector(`[data-pane-id="${CSS.escape(paneId)}"]`);
-  paneEl?.querySelector('.pane-title')?.replaceChildren(document.createTextNode(pane.title));
-  const meta = paneEl?.querySelector('.pane-meta');
-  if (meta) meta.textContent = paneMetaText(pane);
+  updatePaneElement(pane, panes.findIndex(item => item.id === pane.id));
 });
 
 btnSyncTabs.addEventListener('click', () => syncOpenTabs({ notify: true }));
@@ -378,7 +392,7 @@ densitySelect.addEventListener('change', () => {
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape' && focusedPaneId) {
     focusedPaneId = null;
-    renderWorkspace();
+    reconcileWorkspace();
   }
 });
 
@@ -396,11 +410,11 @@ chrome.tabs.onUpdated.addListener((_tabId, changeInfo) => {
 (async function init() {
   try {
     await loadSavedState();
+    reconcileWorkspace();
     await syncOpenTabs();
-    renderWorkspace();
   } catch (error) {
     console.error('[TabFlow Workspace] Init failed:', error);
-    renderWorkspace();
+    reconcileWorkspace();
     showToast(`Workspace init lỗi: ${error.message}`);
   }
 })();
