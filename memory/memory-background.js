@@ -1,3 +1,9 @@
+import {
+  clearMemoryBindingsForTab,
+  memoryActorKey,
+  memoryBindingLookupKeys
+} from './binding-identity.js';
+
 const OFFSCREEN_PATH = 'offscreen/memory.html';
 const CLIENT_PORT = 'TABFLOW_MEMORY_CLIENT';
 const HOST_PORT = 'TABFLOW_MEMORY_OFFSCREEN';
@@ -32,6 +38,16 @@ function conversationKeyFromUrl(url) {
   } catch {
     return '';
   }
+}
+
+function senderFrameId(port) {
+  return Number.isInteger(port?.sender?.frameId) && port.sender.frameId >= 0
+    ? port.sender.frameId
+    : 0;
+}
+
+function senderDocumentId(port) {
+  return typeof port?.sender?.documentId === 'string' ? port.sender.documentId : '';
 }
 
 async function hasOffscreenDocument() {
@@ -136,9 +152,18 @@ async function saveConversationBinding(conversationKey, binding) {
   await chrome.storage.local.set({ [CONVERSATION_BINDINGS_KEY]: persisted });
 }
 
-async function bindProject({ tabId, tabUrl, project }) {
+async function saveActorBinding(session, actorKey, binding, legacyKey = '') {
+  if (!actorKey || !binding?.projectId) return;
+  session[actorKey] = binding;
+  if (legacyKey && legacyKey !== actorKey) delete session[legacyKey];
+  await chrome.storage.session.set({ [SESSION_BINDINGS_KEY]: session });
+}
+
+async function bindProject({ tabId, frameId = 0, documentId = '', tabUrl, project }) {
   if (!Number.isInteger(tabId)) throw new Error('Thiếu tabId ChatGPT cần gắn project');
   if (!project?.id) throw new Error('Thiếu project.id');
+  const actorKey = memoryActorKey(tabId, frameId, documentId);
+  if (!actorKey) throw new Error('Memory actor identity không hợp lệ');
 
   const projectRecord = await callHost('UPSERT_PROJECT', { project });
   const conversationKey = conversationKeyFromUrl(tabUrl);
@@ -149,10 +174,9 @@ async function bindProject({ tabId, tabUrl, project }) {
     conversationKey,
     boundAt: Date.now()
   };
-  session[String(tabId)] = binding;
-  await chrome.storage.session.set({ [SESSION_BINDINGS_KEY]: session });
+  await saveActorBinding(session, actorKey, binding, frameId === 0 ? String(tabId) : '');
   if (conversationKey) await saveConversationBinding(conversationKey, binding);
-  return binding;
+  return { ...binding, actorKey };
 }
 
 async function resolveBinding(port, payload = {}) {
@@ -166,23 +190,41 @@ async function resolveBinding(port, payload = {}) {
 
   const senderTabId = port?.sender?.tab?.id;
   const tabId = Number.isInteger(payload.tabId) ? payload.tabId : senderTabId;
-  const tabUrl = payload.tabUrl || port?.sender?.tab?.url || payload.conversation?.url || '';
+  const frameId = Number.isInteger(payload.frameId) && payload.frameId >= 0
+    ? payload.frameId
+    : senderFrameId(port);
+  const documentId = typeof payload.documentId === 'string'
+    ? payload.documentId
+    : senderDocumentId(port);
+  const actorKey = memoryActorKey(tabId, frameId, documentId);
+  const tabUrl = payload.tabUrl || payload.conversation?.url || port?.sender?.url || port?.sender?.tab?.url || '';
   const conversationKey = payload.conversation?.id?.startsWith('new:')
     ? ''
     : (payload.conversation?.id || conversationKeyFromUrl(tabUrl));
 
-  if (Number.isInteger(tabId)) {
+  if (actorKey) {
     const session = await getSessionBindings();
-    const direct = session[String(tabId)];
+    let direct = null;
+    let matchedKey = '';
+    for (const key of memoryBindingLookupKeys(tabId, frameId, documentId)) {
+      if (session[key]?.projectId) {
+        direct = session[key];
+        matchedKey = key;
+        break;
+      }
+    }
+
     if (direct?.projectId) {
       if (conversationKey && conversationKey !== direct.conversationKey) {
         const promoted = { ...direct, conversationKey, boundAt: Date.now() };
-        session[String(tabId)] = promoted;
-        await chrome.storage.session.set({ [SESSION_BINDINGS_KEY]: session });
+        await saveActorBinding(session, actorKey, promoted, matchedKey !== actorKey ? matchedKey : '');
         await saveConversationBinding(conversationKey, promoted);
-        return { ...promoted, source: 'tab-promoted' };
+        return { ...promoted, actorKey, frameId, source: 'actor-promoted' };
       }
-      return { ...direct, source: 'tab-session' };
+      if (matchedKey !== actorKey) {
+        await saveActorBinding(session, actorKey, direct, matchedKey);
+      }
+      return { ...direct, actorKey, frameId, source: 'actor-session' };
     }
   }
 
@@ -190,12 +232,11 @@ async function resolveBinding(port, payload = {}) {
     const persisted = await getConversationBindings();
     const match = persisted[conversationKey];
     if (match?.projectId) {
-      if (Number.isInteger(tabId)) {
+      if (actorKey) {
         const session = await getSessionBindings();
-        session[String(tabId)] = { ...match, conversationKey, boundAt: Date.now() };
-        await chrome.storage.session.set({ [SESSION_BINDINGS_KEY]: session });
+        await saveActorBinding(session, actorKey, { ...match, conversationKey, boundAt: Date.now() });
       }
-      return { ...match, conversationKey, source: 'conversation-persisted' };
+      return { ...match, conversationKey, actorKey, frameId, source: 'conversation-persisted' };
     }
   }
 
@@ -205,20 +246,26 @@ async function resolveBinding(port, payload = {}) {
 async function runClientRequest(port, type, payload = {}) {
   if (type === 'PING') {
     const worker = await callHost('PING', {});
-    return { worker, protocol: 1 };
+    return { worker, protocol: 2 };
   }
 
   if (type === 'BIND_PROJECT') {
     const tabId = Number.isInteger(payload.tabId) ? payload.tabId : port?.sender?.tab?.id;
-    const tabUrl = payload.tabUrl || port?.sender?.tab?.url || '';
-    return bindProject({ tabId, tabUrl, project: payload.project });
+    const frameId = Number.isInteger(payload.frameId) && payload.frameId >= 0
+      ? payload.frameId
+      : senderFrameId(port);
+    const documentId = typeof payload.documentId === 'string'
+      ? payload.documentId
+      : senderDocumentId(port);
+    const tabUrl = payload.tabUrl || payload.conversation?.url || port?.sender?.url || port?.sender?.tab?.url || '';
+    return bindProject({ tabId, frameId, documentId, tabUrl, project: payload.project });
   }
 
   if (type === 'GET_BINDING') return resolveBinding(port, payload);
 
   const binding = await resolveBinding(port, payload);
   if (!binding?.projectId) {
-    const error = new Error('Tab ChatGPT chưa được gắn với Local Project Memory');
+    const error = new Error('ChatGPT actor chưa được gắn với Local Project Memory');
     error.code = 'PROJECT_NOT_BOUND';
     throw error;
   }
@@ -294,7 +341,7 @@ chrome.runtime.onConnect.addListener(port => {
 
 chrome.tabs.onRemoved.addListener(async tabId => {
   const session = await getSessionBindings();
-  if (!Object.hasOwn(session, String(tabId))) return;
-  delete session[String(tabId)];
-  await chrome.storage.session.set({ [SESSION_BINDINGS_KEY]: session });
+  const next = clearMemoryBindingsForTab(session, tabId);
+  if (Object.keys(next).length === Object.keys(session).length) return;
+  await chrome.storage.session.set({ [SESSION_BINDINGS_KEY]: next });
 });

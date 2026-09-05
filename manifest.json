@@ -55,7 +55,19 @@
         "content-scripts/fetch-proxy.js"
       ],
       "run_at": "document_start",
-      "world": "MAIN"
+      "world": "MAIN",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*"
+      ],
+      "js": [
+        "content-scripts/memory-client.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
     },
     {
       "matches": [
@@ -64,7 +76,6 @@
       ],
       "js": [
         "content-scripts/runtime-agent.js",
-        "content-scripts/memory-client.js",
         "content-scripts/booster.js"
       ],
       "css": [

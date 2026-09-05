@@ -30,6 +30,7 @@ const required = [
   'memory/context-compiler.js',
   'memory/continuity.js',
   'memory/versioning.js',
+  'memory/binding-identity.js',
   'memory/memory-background.js',
   'workers/memory-worker.js',
   'offscreen/memory.html',
@@ -41,6 +42,7 @@ const required = [
   'v3/sidepanel-memory.js',
   'v3/sidepanel-memory.css',
   'test/memory-core.test.mjs',
+  'test/memory-binding-identity.test.mjs',
   'test/context-compiler.test.mjs',
   'test/continuity.test.mjs'
 ];
@@ -48,24 +50,35 @@ for (const rel of required) check(fs.existsSync(path.join(root, rel)) && fs.stat
 
 const manifest = JSON.parse(read('manifest.json'));
 check(manifest.manifest_version === 3, 'Manifest remains MV3');
-check(Number(manifest.minimum_chrome_version) >= 109, 'Chrome baseline supports offscreen documents');
+check(Number(manifest.minimum_chrome_version) >= 109, 'Chrome baseline supports offscreen documents and documentId actor identity');
 check(manifest.permissions.includes('offscreen'), 'offscreen permission declared');
 check(manifest.permissions.includes('unlimitedStorage'), 'unlimitedStorage declared for local IndexedDB corpus');
 check(manifest.background?.service_worker === 'v3/service-worker.js', 'v3 wrapper service worker is active');
 check(manifest.side_panel?.default_path === 'v3/sidepanel.html', 'Cognitive Memory side panel is active');
 
-const mainScripts = manifest.content_scripts.find(item => item.world === 'MAIN')?.js || [];
-const isolatedScripts = manifest.content_scripts.find(item => item.world !== 'MAIN')?.js || [];
+const mainEntry = manifest.content_scripts.find(item => item.world === 'MAIN');
+const memoryEntry = manifest.content_scripts.find(item => item.js?.length === 1 && item.js.includes('content-scripts/memory-client.js'));
+const topUiEntry = manifest.content_scripts.find(item => item.js?.includes('content-scripts/runtime-agent.js') || item.js?.includes('content-scripts/booster.js'));
+const mainScripts = mainEntry?.js || [];
 check(mainScripts.indexOf('content-scripts/memory-fetch-bridge.js') >= 0, 'MAIN-world RAG bridge registered');
 check(mainScripts.indexOf('content-scripts/memory-fetch-bridge.js') < mainScripts.indexOf('content-scripts/fetch-proxy.js'), 'Memory bridge wraps native fetch before Turbo Loader');
-check(isolatedScripts.indexOf('content-scripts/memory-client.js') >= 0, 'Isolated memory client registered');
-check(isolatedScripts.indexOf('content-scripts/memory-client.js') < isolatedScripts.indexOf('content-scripts/booster.js'), 'Memory client loads before UI booster');
+check(mainEntry?.all_frames === true, 'MAIN-world memory/fetch layer runs inside ChatGPT workspace subframes');
+check(memoryEntry?.all_frames === true, 'Isolated memory client runs inside ChatGPT workspace subframes');
+check(topUiEntry?.all_frames !== true, 'runtime/booster remain top-frame only until frame-aware scheduler migration');
+check(!memoryEntry?.js?.includes('content-scripts/runtime-agent.js'), 'frame-aware memory entry does not accidentally enable tab-keyed runtime in subframes');
+check(!memoryEntry?.js?.includes('content-scripts/booster.js'), 'workspace panes do not duplicate top-level booster UI');
 
 const background = read('memory/memory-background.js');
+const identity = read('memory/binding-identity.js');
 check(background.includes("chrome.runtime.onConnect.addListener"), 'Memory transport uses runtime.Port actor channel');
 check(background.includes("reasons: ['WORKERS']"), 'Offscreen document uses official WORKERS reason');
 check(!background.includes('chrome.runtime.onMessage.addListener'), 'Memory background avoids competing with legacy onMessage router');
-check(background.includes('chrome.tabs.onRemoved.addListener'), 'Transient tab bindings are cleaned on tab close');
+check(background.includes('chrome.tabs.onRemoved.addListener'), 'Transient actor bindings are cleaned on tab close');
+check(background.includes('senderDocumentId(port)'), 'Memory binding resolves MV3 sender document identity');
+check(background.includes('memoryActorKey(tabId, frameId, documentId)'), 'Memory background keys subframe actors by tab/frame/document');
+check(identity.includes("if (frame === 0) return `${tabId}:0`"), 'Top-frame project binding survives document reloads');
+check(identity.includes('`${tabId}:${frame}:${doc}`'), 'Subframe binding includes documentId when available');
+check(identity.includes('frameId === 0 ? [actor, String(tabId)] : [actor]'), 'Legacy tab-only binding is inherited only by top frame');
 
 const bridge = read('content-scripts/memory-fetch-bridge.js');
 check(bridge.includes('responseArchiveMeta'), 'Full-DAG archive piggybacks on existing JSON parse');
