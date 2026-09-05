@@ -1,8 +1,8 @@
 import {
   DEFAULT_SPOTLIGHT_RATIO,
   MIN_SPOTLIGHT_RATIO,
-  MAX_SPOTLIGHT_RATIO,
   clampSpotlightRatio,
+  spotlightMaxRatio,
   spotlightRatioFromPointer,
   nudgeSpotlightRatio,
   spotlightRatioCss
@@ -24,9 +24,10 @@ if (grid && separator) {
 
   function updateA11y() {
     const normalized = clampSpotlightRatio(ratio, window.innerWidth);
+    const maxRatio = spotlightMaxRatio(window.innerWidth);
     const pct = Math.round(normalized * 100);
     separator.setAttribute('aria-valuemin', String(Math.round(MIN_SPOTLIGHT_RATIO * 100)));
-    separator.setAttribute('aria-valuemax', String(Math.round(MAX_SPOTLIGHT_RATIO * 100)));
+    separator.setAttribute('aria-valuemax', String(Math.round(maxRatio * 100)));
     separator.setAttribute('aria-valuenow', String(pct));
     separator.setAttribute('aria-valuetext', `Pane chính ${pct}% chiều rộng workspace`);
   }
@@ -109,7 +110,7 @@ if (grid && separator) {
     if (event.key === 'ArrowLeft') next = nudgeSpotlightRatio(ratio, -step, window.innerWidth);
     else if (event.key === 'ArrowRight') next = nudgeSpotlightRatio(ratio, step, window.innerWidth);
     else if (event.key === 'Home') next = MIN_SPOTLIGHT_RATIO;
-    else if (event.key === 'End') next = MAX_SPOTLIGHT_RATIO;
+    else if (event.key === 'End') next = spotlightMaxRatio(window.innerWidth);
     else if (event.key === 'Enter') next = DEFAULT_SPOTLIGHT_RATIO;
     else return;
 
