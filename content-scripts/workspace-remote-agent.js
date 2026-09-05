@@ -237,6 +237,10 @@
     });
   }
 
+  function markWorkspaceSubmitIntent() {
+    window.dispatchEvent(new CustomEvent('tabflow:workspace-submit-intent'));
+  }
+
   async function submitPrompt(rawText) {
     const text = String(rawText || '').trim().slice(0, MAX_PROMPT_CHARS);
     if (!text) throw new Error('Prompt rỗng');
@@ -258,6 +262,7 @@
 
     const sendButton = await waitFor(getSendButton, 1800, 60);
     if (sendButton instanceof HTMLElement) {
+      markWorkspaceSubmitIntent();
       sendButton.click();
       scheduleSnapshot(true);
       return { sent: true };
@@ -265,6 +270,7 @@
 
     const form = editor.closest('form');
     if (form instanceof HTMLFormElement && typeof form.requestSubmit === 'function') {
+      markWorkspaceSubmitIntent();
       form.requestSubmit();
       scheduleSnapshot(true);
       return { sent: true, via: 'requestSubmit' };
