@@ -19,7 +19,7 @@ const DEFAULT_SETTINGS = Object.freeze({
 const portsByTab = new Map();
 let memorySample = { level: 'unknown', ratio: null, capacity: 0, availableCapacity: 0, sampledAt: 0 };
 let memorySamplePromise = null;
-let persistTimer = null;
+let mutationTail = Promise.resolve();
 
 async function loadSettings() {
   const data = await chrome.storage.local.get(SETTINGS_KEY);
@@ -51,12 +51,10 @@ async function writeSnapshot(snapshot) {
   await chrome.storage.session.set({ [RUNTIME_SESSION_KEY]: snapshot });
 }
 
-function schedulePersist(snapshot) {
-  if (persistTimer) clearTimeout(persistTimer);
-  persistTimer = setTimeout(() => {
-    persistTimer = null;
-    writeSnapshot(snapshot).catch(error => console.warn('[TabFlow Runtime] Persist failed:', error));
-  }, 120);
+function withMutation(task) {
+  const current = mutationTail.catch(() => undefined).then(task);
+  mutationTail = current.catch(() => undefined);
+  return current;
 }
 
 function sanitizeEntry(tabId, previous = {}, patch = {}) {
@@ -107,20 +105,25 @@ async function sampleMemory(force = false) {
 }
 
 async function mutateTab(tabId, patch) {
-  const snapshot = await readSnapshot();
-  const previous = snapshot.tabs[String(tabId)] || {};
-  snapshot.tabs[String(tabId)] = sanitizeEntry(tabId, previous, patch);
-  snapshot.updatedAt = Date.now();
-  schedulePersist(snapshot);
-  return snapshot.tabs[String(tabId)];
+  return withMutation(async () => {
+    const snapshot = await readSnapshot();
+    const previous = snapshot.tabs[String(tabId)] || {};
+    const next = sanitizeEntry(tabId, previous, patch);
+    snapshot.tabs[String(tabId)] = next;
+    snapshot.updatedAt = Date.now();
+    await writeSnapshot(snapshot);
+    return next;
+  });
 }
 
 async function removeTab(tabId) {
-  const snapshot = await readSnapshot();
-  if (!Object.hasOwn(snapshot.tabs, String(tabId))) return;
-  delete snapshot.tabs[String(tabId)];
-  snapshot.updatedAt = Date.now();
-  await writeSnapshot(snapshot);
+  return withMutation(async () => {
+    const snapshot = await readSnapshot();
+    if (!Object.hasOwn(snapshot.tabs, String(tabId))) return;
+    delete snapshot.tabs[String(tabId)];
+    snapshot.updatedAt = Date.now();
+    await writeSnapshot(snapshot);
+  });
 }
 
 function postToTab(tabId, message) {
@@ -132,6 +135,7 @@ function postToTab(tabId, message) {
 }
 
 async function recomputeAndBroadcast() {
+  await mutationTail.catch(() => undefined);
   const [snapshot, settings, pressure] = await Promise.all([
     readSnapshot(),
     loadSettings(),
@@ -243,5 +247,4 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true;
 });
 
-// Rebuild a memory-pressure snapshot whenever the service worker wakes.
 sampleMemory(true).then(() => recomputeAndBroadcast()).catch(() => {});
