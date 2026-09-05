@@ -5,6 +5,10 @@ import { ensureWorkspaceFramePolicyForCurrentTab } from './frame-policy-chrome.j
     await ensureWorkspaceFramePolicyForCurrentTab();
     await import('./workspace.js');
     await import('./spotlight-resize.js');
+    // Diagnostics are observational and must never block the workbench itself.
+    import('./workspace-diagnostics-ui.js').catch(error => {
+      console.warn('[TabFlow Workspace] Diagnostics unavailable:', error?.message || error);
+    });
   } catch (error) {
     console.error('[TabFlow Workspace] Secure frame bootstrap failed:', error);
     const summary = document.getElementById('workspace-summary');

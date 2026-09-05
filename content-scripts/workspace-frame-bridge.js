@@ -3,25 +3,37 @@
 
   if (window.top === window || window.__tabflowWorkspaceFrameBridgeInstalled) return;
 
+  const WORKSPACE_FRAME_NAME = 'tabflow-workspace-pane';
   const EXTENSION_ORIGIN = new URL(chrome.runtime.getURL('/')).origin;
   const ancestorOrigin = location.ancestorOrigins?.[0] || '';
   const referrer = document.referrer || '';
-  const isTabFlowWorkspace = ancestorOrigin === EXTENSION_ORIGIN || referrer.startsWith(chrome.runtime.getURL('workspace/'));
+  const isTabFlowWorkspace = window.name === WORKSPACE_FRAME_NAME &&
+    (ancestorOrigin === EXTENSION_ORIGIN || referrer.startsWith(chrome.runtime.getURL('workspace/')));
   if (!isTabFlowWorkspace) return;
 
   window.__tabflowWorkspaceFrameBridgeInstalled = true;
+  const documentToken = globalThis.crypto?.randomUUID?.() ||
+    `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
   let lastFingerprint = '';
   let timer = null;
+
+  function hasGenerationControl() {
+    return Boolean(document.querySelector(
+      'button[data-testid*="stop"], button[aria-label*="Stop" i], button[aria-label*="Dừng" i]'
+    ));
+  }
 
   function emitState(force = false) {
     const payload = {
       type: 'TABFLOW_WORKSPACE_FRAME_STATE',
+      documentToken,
       href: location.href,
       title: (document.title || 'ChatGPT').replace(/\s+-\s+ChatGPT$/i, '').slice(0, 500),
       readyState: document.readyState,
+      generationActive: hasGenerationControl(),
       observedAt: Date.now()
     };
-    const fingerprint = `${payload.href}|${payload.title}|${payload.readyState}`;
+    const fingerprint = `${payload.documentToken}|${payload.href}|${payload.title}|${payload.readyState}|${payload.generationActive}`;
     if (!force && fingerprint === lastFingerprint) return;
     lastFingerprint = fingerprint;
     window.parent.postMessage(payload, EXTENSION_ORIGIN);
