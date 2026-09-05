@@ -12,10 +12,8 @@ export const EXECUTION_MODES = Object.freeze({
   STRAINED: 'strained'
 });
 
-// Content agent gửi heartbeat mỗi 15s khi typing/generating.
-// Nếu quá 45s không còn heartbeat, state productive được xem là stale để
-// tránh một tab đã crash/reload bị bảo vệ khỏi discard vĩnh viễn.
 export const PRODUCTIVE_STATE_STALE_MS = 45_000;
+export const MAX_USER_PARALLEL_GENERATORS = 8;
 
 export function classifyMemoryPressure(info) {
   const capacity = Number(info?.capacity || 0);
@@ -30,10 +28,17 @@ export function classifyMemoryPressure(info) {
   return { level: 'normal', ratio };
 }
 
-export function recommendedParallelGenerators(pressureLevel, userLimit = 2) {
-  const limit = Math.max(1, Math.min(2, Number(userLimit || 2)));
+export function recommendedParallelGenerators(pressureLevel, userLimit = 2, liveTabCount = 1) {
+  const limit = Math.max(1, Math.min(MAX_USER_PARALLEL_GENERATORS, Number(userLimit || 2)));
+  const live = Math.max(1, Math.floor(Number(liveTabCount || 1)));
+  const ceiling = Math.min(limit, live);
+
+  // Không giới hạn số tab trong workspace. Đây chỉ là số generation được
+  // khuyến nghị chạy đồng thời để giữ renderer responsive khi RAM căng.
   if (pressureLevel === 'critical' || pressureLevel === 'high') return 1;
-  return limit;
+  if (pressureLevel === 'medium') return Math.min(2, ceiling);
+  if (pressureLevel === 'unknown') return Math.min(2, ceiling);
+  return ceiling;
 }
 
 export function isProductiveStateFresh(entry, now = Date.now()) {
