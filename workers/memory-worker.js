@@ -10,6 +10,7 @@ import {
 } from '../memory/db.js';
 import { BM25ProjectIndex } from '../memory/bm25.js';
 import { buildStructuralCandidates, compileContext } from '../memory/context-compiler.js';
+import { isStaleObservation, monotonicObservedAt } from '../memory/versioning.js';
 import {
   chunkCode,
   chunkProse,
@@ -128,6 +129,7 @@ async function upsertConversation(projectId, conversation = {}) {
   const rawId = String(conversation.id || conversation.url || 'unknown').slice(0, 500);
   const id = `${projectId}:conversation:${rawId}`;
   const existing = await get('conversations', id);
+  const incomingObservedAt = observedTime(conversation.observedAt);
   const record = {
     id,
     projectId,
@@ -136,7 +138,7 @@ async function upsertConversation(projectId, conversation = {}) {
     url: String(conversation.url || existing?.url || '').slice(0, 4000),
     createdAt: existing?.createdAt || now(),
     updatedAt: now(),
-    lastObservedAt: observedTime(conversation.observedAt)
+    lastObservedAt: monotonicObservedAt(existing?.lastObservedAt, incomingObservedAt, incomingObservedAt)
   };
   await put('conversations', record);
   await upsertEdge(projectId, `project:${projectId}`, id, 'CONTAINS_CONVERSATION');
@@ -157,14 +159,19 @@ async function upsertEdge(projectId, from, to, type, metadata = null) {
   return id;
 }
 
-async function removeChunksForMessage(projectId, sourceMessageId) {
+async function getMessageChunks(projectId, sourceMessageId) {
   if (!sourceMessageId) return [];
-  const existing = await getAllFromIndex('chunks', 'projectMessage', IDBKeyRange.only([projectId, sourceMessageId]));
-  if (existing.length === 0) return [];
+  return getAllFromIndex('chunks', 'projectMessage', IDBKeyRange.only([projectId, sourceMessageId]));
+}
+
+async function removeChunksForMessage(projectId, sourceMessageId, existing = null) {
+  if (!sourceMessageId) return [];
+  const records = Array.isArray(existing) ? existing : await getMessageChunks(projectId, sourceMessageId);
+  if (records.length === 0) return [];
   await deleteAllFromIndex('chunks', 'projectMessage', IDBKeyRange.only([projectId, sourceMessageId]));
   const index = indexCache.get(projectId);
-  if (index) for (const chunk of existing) index.remove(chunk.id);
-  return existing.map(item => item.id);
+  if (index) for (const chunk of records) index.remove(chunk.id);
+  return records.map(item => item.id);
 }
 
 async function replaceFileChunks(projectId, fileId, chunks) {
@@ -189,10 +196,12 @@ async function storeCodeBlock({ projectId, conversation, sourceMessageId, block,
   const path = detectedPath || fallback;
   const fileId = `file:${await sha256Hex(`${projectId}\0${path}`)}`;
   const existing = await get('files', fileId);
+  const existingUpdatedAt = Number(existing?.updatedAt || 0);
+  const incomingIsOlder = existingUpdatedAt > observedAt;
 
   // Old archive evidence must never overwrite a newer VFS version. This is
   // especially important when an historical ChatGPT node has no create_time.
-  if (existing && Number(existing.updatedAt || 0) > observedAt && existing.contentHash !== contentHash) {
+  if (existing && incomingIsOlder && existing.contentHash !== contentHash) {
     return { ...existing, staleArchiveSkipped: true };
   }
 
@@ -204,10 +213,10 @@ async function storeCodeBlock({ projectId, conversation, sourceMessageId, block,
     content: code,
     contentHash,
     virtual: !detectedPath,
-    sourceConversationId: conversation.id,
-    sourceMessageId: sourceMessageId || null,
+    sourceConversationId: incomingIsOlder ? existing?.sourceConversationId : conversation.id,
+    sourceMessageId: incomingIsOlder ? existing?.sourceMessageId : (sourceMessageId || null),
     createdAt: existing?.createdAt || observedAt,
-    updatedAt: observedAt
+    updatedAt: monotonicObservedAt(existingUpdatedAt, observedAt, observedAt)
   };
 
   await put('files', fileRecord);
@@ -293,6 +302,10 @@ async function storeUserConstraints({ projectId, conversation, sourceMessageId, 
   for (const statement of constraints) {
     const id = `decision:${await sha256Hex(`${projectId}\0user\0${statement.toLowerCase()}`)}`;
     const existing = await get('decisions', id);
+    if (existing && Number(existing.updatedAt || 0) > observedAt) {
+      out.push(existing);
+      continue;
+    }
     const record = {
       id,
       projectId,
@@ -302,7 +315,7 @@ async function storeUserConstraints({ projectId, conversation, sourceMessageId, 
       sourceConversationId: conversation.id,
       sourceMessageId: sourceMessageId || null,
       createdAt: existing?.createdAt || observedAt,
-      updatedAt: observedAt
+      updatedAt: monotonicObservedAt(existing?.updatedAt, observedAt, observedAt)
     };
     await put('decisions', record);
     await upsertEdge(projectId, `project:${projectId}`, id, 'HAS_CONSTRAINT');
@@ -321,7 +334,22 @@ async function ingestMessage(payload) {
   const observedAt = observedTime(payload.observedAt);
   const sourceMessageId = String(payload.messageId || await sha256Hex(`${role}\0${text}`)).slice(0, 500);
 
-  await removeChunksForMessage(projectId, sourceMessageId);
+  // Preflight before destructive replacement. A historical archive can arrive
+  // after the live DOM observation for the same ChatGPT message id; deleting
+  // first would erase newer searchable chunks even if VFS later rejects the file.
+  const existingMessageEvidence = await getMessageChunks(projectId, sourceMessageId);
+  if (isStaleObservation(existingMessageEvidence, observedAt)) {
+    return {
+      conversationId: conversation.id,
+      messageId: sourceMessageId,
+      files: [],
+      chunks: 0,
+      decisions: 0,
+      staleObservationSkipped: true
+    };
+  }
+
+  await removeChunksForMessage(projectId, sourceMessageId, existingMessageEvidence);
 
   const explicitBlocks = Array.isArray(payload.codeBlocks) ? payload.codeBlocks : [];
   const markdownBlocks = explicitBlocks.length === 0 ? extractFencedCode(text) : [];
@@ -353,7 +381,8 @@ async function ingestMessage(payload) {
       staleArchiveSkipped: Boolean(file.staleArchiveSkipped)
     })),
     chunks: proseChunks.length,
-    decisions: decisions.length
+    decisions: decisions.length,
+    staleObservationSkipped: false
   };
 }
 
@@ -373,7 +402,10 @@ async function ingestArchive(payload) {
       observedAt: Number(message.observedAt) > 0 ? Number(message.observedAt) : 1
     }));
   }
-  return { ingested: results.length };
+  return {
+    ingested: results.length,
+    skippedStale: results.filter(item => item.staleObservationSkipped).length
+  };
 }
 
 function decisionScore(statement, queryTerms) {

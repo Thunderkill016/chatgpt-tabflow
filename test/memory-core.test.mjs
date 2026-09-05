@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { BM25ProjectIndex } from '../memory/bm25.js';
+import { isStaleObservation, monotonicObservedAt, newestObservedAt } from '../memory/versioning.js';
 import {
   chunkCode,
   chunkProse,
@@ -74,9 +75,26 @@ function testBudgetEstimate() {
   assert(estimateTokens('a'.repeat(400), 'prose') >= 100);
 }
 
+function testObservationVersioning() {
+  const evidence = [
+    { updatedAt: 1000 },
+    { updatedAt: 3000 },
+    { observedAt: 2500 }
+  ];
+  assert.equal(newestObservedAt(evidence), 3000);
+  assert.equal(isStaleObservation(evidence, 2000), true, 'older archive must be rejected');
+  assert.equal(isStaleObservation(evidence, 3000), false, 'same observation time is not stale');
+  assert.equal(isStaleObservation(evidence, 4000), false, 'newer live observation must be accepted');
+  assert.equal(isStaleObservation([], 1), false, 'first historical observation remains ingestible');
+  assert.equal(monotonicObservedAt(5000, 1000), 5000, 'timestamps never regress');
+  assert.equal(monotonicObservedAt(1000, 5000), 5000, 'newer timestamp advances state');
+  assert.equal(monotonicObservedAt(0, 0, 7), 7, 'fallback timestamp is supported');
+}
+
 testTokenizer();
 testPathSafety();
 testChunking();
 testBm25();
 testBudgetEstimate();
+testObservationVersioning();
 console.log('memory-core.test.mjs: all tests passed');

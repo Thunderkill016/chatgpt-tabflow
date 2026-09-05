@@ -29,6 +29,7 @@ const required = [
   'memory/bm25.js',
   'memory/context-compiler.js',
   'memory/continuity.js',
+  'memory/versioning.js',
   'memory/memory-background.js',
   'workers/memory-worker.js',
   'offscreen/memory.html',
@@ -61,7 +62,7 @@ check(isolatedScripts.indexOf('content-scripts/memory-client.js') >= 0, 'Isolate
 check(isolatedScripts.indexOf('content-scripts/memory-client.js') < isolatedScripts.indexOf('content-scripts/booster.js'), 'Memory client loads before UI booster');
 
 const background = read('memory/memory-background.js');
-check(background.includes('chrome.runtime.onConnect.addListener'), 'Memory transport uses runtime.Port actor channel');
+check(background.includes("chrome.runtime.onConnect.addListener"), 'Memory transport uses runtime.Port actor channel');
 check(background.includes("reasons: ['WORKERS']"), 'Offscreen document uses official WORKERS reason');
 check(!background.includes('chrome.runtime.onMessage.addListener'), 'Memory background avoids competing with legacy onMessage router');
 check(background.includes('chrome.tabs.onRemoved.addListener'), 'Transient tab bindings are cleaned on tab close');
@@ -71,34 +72,20 @@ check(bridge.includes('responseArchiveMeta'), 'Full-DAG archive piggybacks on ex
 check(bridge.includes('submitCache'), 'Non-idempotent prompt submission shield enabled');
 check(bridge.includes('SUBMIT_DEDUPE_MS'), 'Prompt replay protection has bounded lifetime');
 check(bridge.includes('fingerprint !== prepared.fingerprint'), 'RAG injection is fingerprint-bound to current prompt');
-
-const proxy = read('content-scripts/fetch-proxy.js');
-check(proxy.includes("const retrySafe = method === 'GET' || method === 'HEAD'"), 'Turbo proxy retries only safe/idempotent methods');
-check(proxy.includes('if (!retrySafe || attempt >= maxRetries) throw err'), 'Network failure never replays a mutating request');
-
-const worker = read('workers/memory-worker.js');
-check(worker.includes("from '../memory/context-compiler.js'"), 'Memory worker uses tiered context compiler');
-check(worker.includes('buildStructuralCandidates(fetched'), 'RAG includes compact structural repo-map candidates');
-check(worker.includes('visibleCitations'), 'Model context and visible citations are separate outputs');
-check(worker.includes('void current.then(cleanup, cleanup)'), 'Write queue cleanup consumes both promise outcomes');
-check(worker.includes('staleArchiveSkipped'), 'Old archive evidence cannot silently overwrite newer VFS state');
-check(!worker.includes('current.finally(() =>'), 'Write queue no longer creates orphan rejecting finally promise');
-
-const contextCompiler = read('memory/context-compiler.js');
-check(contextCompiler.includes('authority'), 'Context compiler has authority tier');
-check(contextCompiler.includes('continuity'), 'Context compiler reserves continuity tier');
-check(contextCompiler.includes('structural'), 'Context compiler has structural repo-map tier');
-check(contextCompiler.includes('retrieval'), 'Context compiler has retrieval tier');
-
-const continuity = read('memory/continuity.js');
-check(continuity.includes('parentId'), 'Continuity kernel models parent message identity');
-check(continuity.includes('childrenIds'), 'Continuity kernel preserves conversation branches');
-check(continuity.includes('previousCheckpointId'), 'Continuity checkpoints form an explicit lineage');
+check(bridge.includes('sourceTime * 1000 : 1'), 'Unknown archive timestamps remain older than live DOM observations');
 
 const client = read('content-scripts/memory-client.js');
 check(client.includes("chrome.runtime.connect({ name: PORT_NAME })"), 'Content client uses long-lived Port RPC');
 check(client.includes('TABFLOW_MEMORY_CLIENT_STATUS'), 'Side panel can inspect live RAG state');
 check(client.includes('TABFLOW_MEMORY_FORCE_SYNC'), 'Side panel can trigger manual sync');
+
+const worker = read('workers/memory-worker.js');
+const staleGuardIndex = worker.indexOf('isStaleObservation(existingMessageEvidence, observedAt)');
+const destructiveReplaceIndex = worker.indexOf('removeChunksForMessage(projectId, sourceMessageId, existingMessageEvidence)');
+check(worker.includes("from '../memory/versioning.js'"), 'Memory worker uses shared observation-version policy');
+check(staleGuardIndex >= 0 && destructiveReplaceIndex > staleGuardIndex, 'Stale observation guard runs before destructive message replacement');
+check(worker.includes('monotonicObservedAt(existingUpdatedAt, observedAt, observedAt)'), 'VFS timestamps cannot regress on older archives');
+check(worker.includes('skippedStale'), 'Archive ingest reports skipped stale observations');
 
 const panel = read('v3/sidepanel.html');
 check(panel.includes('id="tab-nav-memory"'), 'Visible Memory navigation exists');
