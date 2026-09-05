@@ -247,27 +247,31 @@
     const key = fnv1a(`${request.method}\0${request.url}\0${body}`);
     const existing = submitCache.get(key);
     if (existing && existing.expiresAt > now) {
-      if (existing.error) throw existing.error;
-      if (existing.snapshot) return existing.snapshot.clone();
+      // A second caller shares only the in-flight network request. We clone at
+      // the moment a real duplicate exists, never pre-emptively for every
+      // streaming POST response.
+      const response = await existing.promise;
       try {
-        await existing.promise;
-      } catch {}
-      if (existing.error) throw existing.error;
-      if (existing.snapshot) return existing.snapshot.clone();
+        return response.clone();
+      } catch (error) {
+        console.warn('[TabFlow Memory Bridge] Duplicate response clone failed:', error);
+        throw error;
+      }
     }
 
-    const entry = { expiresAt: now + SUBMIT_DEDUPE_MS, snapshot: null, error: null, promise: null };
-    entry.promise = Reflect.apply(nativeFetch, context, [request])
-      .then(response => {
-        try { entry.snapshot = response.clone(); } catch {}
-        return response;
-      })
-      .catch(error => {
-        entry.error = error;
-        throw error;
-      });
+    const entry = {
+      expiresAt: now + SUBMIT_DEDUPE_MS,
+      promise: Reflect.apply(nativeFetch, context, [request])
+    };
     submitCache.set(key, entry);
-    return entry.promise;
+
+    try {
+      return await entry.promise;
+    } finally {
+      // Fetch resolves when response headers arrive. Removing the entry here
+      // prevents an unread clone branch from retaining a streaming body in RAM.
+      if (submitCache.get(key) === entry) submitCache.delete(key);
+    }
   }
 
   window.addEventListener('message', event => {
