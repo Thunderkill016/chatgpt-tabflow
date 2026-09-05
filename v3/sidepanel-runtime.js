@@ -102,9 +102,13 @@ function formatHeap(bytes) {
   return `${Math.round(bytes / 1024 / 1024)} MB JS heap`;
 }
 
+function connectedCount(snapshot = {}) {
+  return Object.values(snapshot.tabs || {}).filter(entry => entry?.connected).length;
+}
+
 function updateQuickCard(snapshot = {}, settings = {}, chromeTabs = []) {
   if (!quickTitle || !quickSub) return;
-  const connected = Object.values(snapshot.tabs || {}).length;
+  const connected = connectedCount(snapshot);
   const total = chromeTabs.length;
   const generating = Number(snapshot.generatingCount || 0);
   const protectedCount = Number(snapshot.protectedCount || 0);
@@ -124,13 +128,11 @@ function renderTabs(snapshot, chromeTabs) {
   if (!agentsHost) return;
   const runtimeEntries = snapshot?.tabs || {};
   const tabs = chromeTabs.slice().sort((a, b) => {
-    const aEntry = runtimeEntries[String(a.id)] || {};
-    const bEntry = runtimeEntries[String(b.id)] || {};
     const score = tab => {
       const entry = runtimeEntries[String(tab.id)] || {};
       if (tab.active) return 5;
-      if (entry.state === 'generating') return 4;
-      if (entry.state === 'typing') return 3;
+      if (entry.connected && entry.state === 'generating') return 4;
+      if (entry.connected && entry.state === 'typing') return 3;
       if (!tab.discarded) return 2;
       return 1;
     };
@@ -148,8 +150,9 @@ function renderTabs(snapshot, chromeTabs) {
 
   for (const tab of tabs) {
     const entry = runtimeEntries[String(tab.id)] || null;
-    const modeName = tab.discarded ? 'sleeping' : (entry?.mode || 'untracked');
-    const stateName = tab.discarded ? 'sleeping' : (entry?.state || 'untracked');
+    const tracked = Boolean(entry?.connected);
+    const modeName = tab.discarded ? 'sleeping' : (tracked ? (entry.mode || 'eco') : 'untracked');
+    const stateName = tab.discarded ? 'sleeping' : (tracked ? (entry.state || 'idle') : 'untracked');
 
     const card = document.createElement('article');
     card.className = `runtime-agent-card mode-${modeName}`;
@@ -170,7 +173,7 @@ function renderTabs(snapshot, chromeTabs) {
     if (entry?.projectName) pieces.push(entry.projectName);
     const heap = formatHeap(entry?.heapUsed);
     if (heap) pieces.push(heap);
-    if (!entry && !tab.discarded) pieces.push('reload tab để kết nối runtime');
+    if (!tracked && !tab.discarded) pieces.push('reload tab để kết nối runtime');
     if (tab.discarded) pieces.push('💤 discarded');
     meta.textContent = pieces.join(' · ');
 
@@ -222,7 +225,7 @@ async function refreshRuntime() {
     projectSelect.value = settings.projectId;
   }
 
-  const connected = Object.values(snapshot.tabs || {}).length;
+  const connected = connectedCount(snapshot);
   if (liveSummary) liveSummary.textContent = `${tabs.length} mở · ${connected} runtime`;
   renderTabs(snapshot, tabs);
 }
