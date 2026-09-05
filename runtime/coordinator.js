@@ -34,7 +34,7 @@ async function saveSettings(patch) {
     ...current,
     ...patch,
     cooperativeEnabled: patch.cooperativeEnabled === undefined ? current.cooperativeEnabled : Boolean(patch.cooperativeEnabled),
-    maxParallelGenerators: Math.max(1, Math.min(2, Number(patch.maxParallelGenerators ?? current.maxParallelGenerators ?? 2)))
+    maxParallelGenerators: Math.max(1, Math.min(8, Number(patch.maxParallelGenerators ?? current.maxParallelGenerators ?? 2)))
   };
   await chrome.storage.local.set({ [SETTINGS_KEY]: next });
   await recomputeAndBroadcast();
@@ -162,10 +162,13 @@ async function recomputeAndBroadcast() {
 
     const now = Date.now();
     const entries = Object.values(snapshot.tabs || {});
+    const liveTabCount = entries.length;
     const generatingCount = entries.filter(entry => entry.state === RUNTIME_STATES.GENERATING).length;
+    const typingCount = entries.filter(entry => entry.state === RUNTIME_STATES.TYPING).length;
+    const idleCount = entries.filter(entry => entry.state === RUNTIME_STATES.IDLE).length;
     const parallelBudget = settings.cooperativeEnabled
-      ? recommendedParallelGenerators(pressure.level, settings.maxParallelGenerators)
-      : 2;
+      ? recommendedParallelGenerators(pressure.level, settings.maxParallelGenerators, liveTabCount)
+      : Math.max(1, Math.min(8, liveTabCount || 1));
 
     for (const entry of entries) {
       const mode = settings.cooperativeEnabled
@@ -178,6 +181,7 @@ async function recomputeAndBroadcast() {
         mode,
         pressure: pressure.level,
         parallelBudget,
+        liveTabCount,
         generatingCount,
         cooperativeEnabled: settings.cooperativeEnabled,
         protectedFromDiscard: entry.protectedFromDiscard
@@ -187,8 +191,11 @@ async function recomputeAndBroadcast() {
 
     snapshot.tabs = Object.fromEntries(entries.map(entry => [String(entry.tabId), entry]));
     snapshot.memory = pressure;
+    snapshot.liveTabCount = liveTabCount;
     snapshot.parallelBudget = parallelBudget;
     snapshot.generatingCount = generatingCount;
+    snapshot.typingCount = typingCount;
+    snapshot.idleCount = idleCount;
     snapshot.protectedCount = entries.filter(entry => entry.protectedFromDiscard).length;
     snapshot.cooperativeEnabled = settings.cooperativeEnabled;
     snapshot.updatedAt = Date.now();
