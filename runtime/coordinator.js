@@ -173,6 +173,7 @@ async function recomputeAndBroadcast() {
     const parallelBudget = settings.cooperativeEnabled
       ? recommendedParallelGenerators(pressure.level, settings.maxParallelGenerators, liveTabCount)
       : Math.max(1, Math.min(8, liveTabCount || 1));
+    const discardabilitySyncs = [];
 
     for (const entry of entries) {
       const mode = settings.cooperativeEnabled
@@ -192,8 +193,14 @@ async function recomputeAndBroadcast() {
           cooperativeEnabled: settings.cooperativeEnabled,
           protectedFromDiscard: entry.protectedFromDiscard
         });
-        syncAutoDiscardable(entry, now).catch(() => {});
+        discardabilitySyncs.push(syncAutoDiscardable(entry, now));
       }
+    }
+
+    // Protection is part of the runtime contract, not best-effort telemetry.
+    // Wait until Chrome has processed autoDiscardable changes for this state transition.
+    if (discardabilitySyncs.length > 0) {
+      await Promise.allSettled(discardabilitySyncs);
     }
 
     snapshot.tabs = Object.fromEntries(entries.map(entry => [String(entry.tabId), entry]));
