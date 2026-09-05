@@ -3,26 +3,32 @@ const runtimeNav = document.getElementById('tab-nav-runtime');
 const projectSelect = document.getElementById('runtime-project-select');
 const startButton = document.getElementById('runtime-start-btn');
 const cooperativeToggle = document.getElementById('runtime-coop-toggle');
+const autoSleepToggle = document.getElementById('runtime-auto-sleep-toggle');
+const idleMinutesSelect = document.getElementById('runtime-idle-minutes');
 const parallelSelect = document.getElementById('runtime-parallel-select');
+const optimizeButton = document.getElementById('runtime-optimize-btn');
 const pressureLabel = document.getElementById('runtime-pressure');
 const pressureSub = document.getElementById('runtime-pressure-sub');
 const generatorLabel = document.getElementById('runtime-generators');
 const budgetSub = document.getElementById('runtime-budget-sub');
 const agentsHost = document.getElementById('runtime-agents');
 const liveSummary = document.getElementById('runtime-live-summary');
-const quickCard = document.getElementById('runtime-quick-card');
-const quickTitle = document.getElementById('runtime-quick-title');
-const quickSub = document.getElementById('runtime-quick-sub');
+const systemSummary = document.getElementById('runtime-system-summary');
+const openCount = document.getElementById('runtime-open-count');
+const generatingCount = document.getElementById('runtime-generating-count');
+const idleCount = document.getElementById('runtime-idle-count');
+const sleepingCount = document.getElementById('runtime-sleeping-count');
 
 let refreshTimer = null;
 let memoryPort = null;
 let memorySeq = 0;
 const memoryPending = new Map();
 
-function showRuntimeToast(message) {
+function showRuntimeToast(message, tone = 'info') {
   const toast = document.getElementById('toast');
   if (!toast) return;
   toast.textContent = message;
+  toast.dataset.tone = tone;
   toast.classList.add('show');
   setTimeout(() => toast.classList.remove('show'), 2600);
 }
@@ -72,7 +78,7 @@ async function loadProjects() {
   projectSelect.replaceChildren();
   const blank = document.createElement('option');
   blank.value = '';
-  blank.textContent = projects.length ? 'Chọn project chung…' : 'Chưa có project trong Project Vault';
+  blank.textContent = projects.length ? 'Chọn project chung…' : 'Chưa có project';
   projectSelect.appendChild(blank);
 
   for (const project of projects) {
@@ -88,40 +94,54 @@ async function loadProjects() {
   return projects;
 }
 
-function pressureText(memory) {
-  const level = memory?.level || 'unknown';
-  const ratio = typeof memory?.ratio === 'number' ? Math.round(memory.ratio * 100) : null;
-  return {
-    label: `${level.toUpperCase()}${ratio === null ? '' : ` · ${ratio}% free`}`,
-    className: `runtime-pressure ${level}`
-  };
-}
-
-function formatHeap(bytes) {
-  if (!(bytes > 0)) return '';
-  return `${Math.round(bytes / 1024 / 1024)} MB JS heap`;
-}
-
 function connectedCount(snapshot = {}) {
   return Object.values(snapshot.tabs || {}).filter(entry => entry?.connected).length;
 }
 
-function updateQuickCard(snapshot = {}, settings = {}, chromeTabs = []) {
-  if (!quickTitle || !quickSub) return;
-  const connected = connectedCount(snapshot);
-  const total = chromeTabs.length;
-  const generating = Number(snapshot.generatingCount || 0);
-  const protectedCount = Number(snapshot.protectedCount || 0);
-  const pressure = String(snapshot.memory?.level || 'unknown').toUpperCase();
-  const projectName = settings.projectName || '';
+function pressureDescriptor(level = 'unknown') {
+  const descriptors = {
+    normal: {
+      label: 'Bình thường',
+      detail: 'Tài nguyên hệ thống ổn định. Runtime không cần giảm tải.'
+    },
+    medium: {
+      label: 'Đang tiết kiệm',
+      detail: 'Runtime đang giảm hoạt động nền để giữ trải nghiệm ổn định.'
+    },
+    high: {
+      label: 'Hệ thống căng',
+      detail: 'Runtime đang hạn chế tải nền và giảm mức trả lời song song.'
+    },
+    critical: {
+      label: 'Rất căng',
+      detail: 'Runtime ưu tiên chat đang làm việc và giảm mạnh hoạt động nền.'
+    },
+    unknown: {
+      label: 'Đang đọc',
+      detail: 'Chưa có đủ dữ liệu để đánh giá tài nguyên hệ thống.'
+    }
+  };
+  return descriptors[level] || descriptors.unknown;
+}
 
-  quickTitle.textContent = projectName
-    ? `Adaptive Workspace · ${projectName}`
-    : 'Adaptive Workspace · chưa gắn project';
+function relativeActivity(timestamp) {
+  const value = Number(timestamp || 0);
+  if (!value) return '';
+  const seconds = Math.max(0, Math.round((Date.now() - value) / 1000));
+  if (seconds < 45) return 'vừa hoạt động';
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} phút trước`;
+  const hours = Math.round(minutes / 60);
+  return `${hours} giờ trước`;
+}
 
-  const connectionNote = connected < total ? ` · ${total - connected} chưa kết nối` : '';
-  quickSub.textContent = `${total} tab mở · ${connected} runtime · ${generating} generating · ${protectedCount} protected · ${pressure}${connectionNote}`;
-  quickCard?.classList.toggle('has-warning', connected < total || pressure === 'HIGH' || pressure === 'CRITICAL');
+function friendlyTabState(tab, entry) {
+  if (tab.discarded) return { label: 'Đang ngủ', className: 'sleeping' };
+  if (!entry?.connected) return { label: 'Chưa kết nối', className: 'untracked' };
+  if (entry.state === 'generating') return { label: 'Đang trả lời', className: 'generating' };
+  if (entry.state === 'typing') return { label: 'Đang gõ', className: 'typing' };
+  if (tab.active || entry.focused || entry.visible) return { label: 'Đang dùng', className: 'active' };
+  return { label: 'Nhàn rỗi', className: 'idle' };
 }
 
 function renderTabs(snapshot, chromeTabs) {
@@ -130,9 +150,10 @@ function renderTabs(snapshot, chromeTabs) {
   const tabs = chromeTabs.slice().sort((a, b) => {
     const score = tab => {
       const entry = runtimeEntries[String(tab.id)] || {};
-      if (tab.active) return 5;
-      if (entry.connected && entry.state === 'generating') return 4;
-      if (entry.connected && entry.state === 'typing') return 3;
+      if (tab.active) return 6;
+      if (entry.connected && entry.state === 'generating') return 5;
+      if (entry.connected && entry.state === 'typing') return 4;
+      if (entry.protectedFromDiscard) return 3;
       if (!tab.discarded) return 2;
       return 1;
     };
@@ -150,94 +171,167 @@ function renderTabs(snapshot, chromeTabs) {
 
   for (const tab of tabs) {
     const entry = runtimeEntries[String(tab.id)] || null;
-    const tracked = Boolean(entry?.connected);
-    const modeName = tab.discarded ? 'sleeping' : (tracked ? (entry.mode || 'eco') : 'untracked');
-    const stateName = tab.discarded ? 'sleeping' : (tracked ? (entry.state || 'idle') : 'untracked');
+    const state = friendlyTabState(tab, entry);
 
     const card = document.createElement('article');
-    card.className = `runtime-agent-card mode-${modeName}`;
+    card.className = `runtime-agent-card state-${state.className}`;
+
+    const copy = document.createElement('div');
+    copy.className = 'runtime-agent-copy';
 
     const header = document.createElement('div');
     header.className = 'runtime-agent-head';
     const title = document.createElement('strong');
     title.textContent = (tab.title || 'ChatGPT').replace(/ - ChatGPT$/i, '');
-    const mode = document.createElement('span');
-    mode.className = `runtime-mode-pill ${modeName}`;
-    mode.textContent = modeName;
-    header.append(title, mode);
+    title.title = title.textContent;
+    const status = document.createElement('span');
+    status.className = `runtime-state-pill ${state.className}`;
+    status.textContent = state.label;
+    header.append(title, status);
 
     const meta = document.createElement('div');
     meta.className = 'runtime-agent-meta';
-    const pieces = [stateName];
-    if (entry?.protectedFromDiscard) pieces.push('🛡 protected');
+    const pieces = [];
     if (entry?.projectName) pieces.push(entry.projectName);
-    const heap = formatHeap(entry?.heapUsed);
-    if (heap) pieces.push(heap);
-    if (!tracked && !tab.discarded) pieces.push('reload tab để kết nối runtime');
-    if (tab.discarded) pieces.push('💤 discarded');
-    meta.textContent = pieces.join(' · ');
+    if (entry?.protectedFromDiscard) pieces.push('được bảo vệ');
+    const activity = relativeActivity(entry?.lastActivityAt || tab.lastAccessed);
+    if (activity) pieces.push(activity);
+    if (!entry?.connected && !tab.discarded) pieces.push('reload để Runtime theo dõi');
+    if (tab.discarded) pieces.push('sẽ tự tải lại khi mở');
+    meta.textContent = pieces.join(' · ') || 'Sẵn sàng';
+    copy.append(header, meta);
 
     const controls = document.createElement('div');
-    controls.className = 'runtime-agent-controls runtime-agent-controls-single';
+    controls.className = 'runtime-agent-controls';
+
     const focus = document.createElement('button');
     focus.className = 'runtime-small-btn';
-    focus.textContent = tab.discarded ? 'Mở & reload' : 'Mở tab';
-    focus.addEventListener('click', () => chrome.runtime.sendMessage({ type: 'ACTIVATE_TAB', tabId: tab.id }));
+    focus.type = 'button';
+    focus.textContent = tab.discarded ? 'Mở lại' : 'Mở';
+    focus.addEventListener('click', async () => {
+      await chrome.runtime.sendMessage({ type: 'ACTIVATE_TAB', tabId: tab.id });
+      await refreshRuntime();
+    });
     controls.appendChild(focus);
 
-    card.append(header, meta, controls);
+    if (!tab.discarded && !tab.active && entry?.connected && entry.state === 'idle' && !entry.protectedFromDiscard) {
+      const sleep = document.createElement('button');
+      sleep.className = 'runtime-small-btn';
+      sleep.type = 'button';
+      sleep.textContent = 'Cho ngủ';
+      sleep.addEventListener('click', async () => {
+        sleep.disabled = true;
+        const result = await chrome.runtime.sendMessage({ type: 'DISCARD_TAB', tabId: tab.id });
+        showRuntimeToast(
+          result?.success ? 'Đã cho chat nhàn rỗi ngủ.' : 'Chat vừa hoạt động hoặc đang được bảo vệ.',
+          result?.success ? 'success' : 'warning'
+        );
+        await refreshRuntime();
+      });
+      controls.appendChild(sleep);
+    }
+
+    if (!tab.discarded && !entry?.connected) {
+      const reload = document.createElement('button');
+      reload.className = 'runtime-small-btn';
+      reload.type = 'button';
+      reload.textContent = 'Reload';
+      reload.addEventListener('click', async () => {
+        reload.disabled = true;
+        try {
+          await chrome.tabs.reload(tab.id);
+          showRuntimeToast('Đã reload chat để kết nối Runtime.', 'success');
+        } finally {
+          setTimeout(() => refreshRuntime().catch(() => {}), 1200);
+        }
+      });
+      controls.appendChild(reload);
+    }
+
+    card.append(copy, controls);
     agentsHost.appendChild(card);
   }
 }
 
+function applyRuntimeControls(runtimeSettings = {}, lifecycleSettings = {}) {
+  if (cooperativeToggle) cooperativeToggle.checked = runtimeSettings.cooperativeEnabled !== false;
+  if (parallelSelect) parallelSelect.value = String(runtimeSettings.maxParallelGenerators || 2);
+  if (autoSleepToggle) autoSleepToggle.checked = lifecycleSettings.autoDiscardEnabled !== false;
+  if (idleMinutesSelect) {
+    const minutes = String(Math.max(1, Number(lifecycleSettings.discardIdleMinutes || 5)));
+    if ([...idleMinutesSelect.options].some(option => option.value === minutes)) {
+      idleMinutesSelect.value = minutes;
+    }
+    idleMinutesSelect.disabled = lifecycleSettings.autoDiscardEnabled === false;
+  }
+  if (runtimeSettings.projectId && projectSelect && [...projectSelect.options].some(option => option.value === runtimeSettings.projectId)) {
+    projectSelect.value = runtimeSettings.projectId;
+  }
+}
+
 async function refreshRuntime() {
-  const [runtime, tabsData] = await Promise.all([
+  const [runtime, tabsData, lifecycle] = await Promise.all([
     chrome.runtime.sendMessage({ type: 'RUNTIME_GET_STATE' }),
-    chrome.runtime.sendMessage({ type: 'GET_TABS_DATA' })
+    chrome.runtime.sendMessage({ type: 'GET_TABS_DATA' }),
+    chrome.runtime.sendMessage({ type: 'GET_SETTINGS' })
   ]);
   if (!runtime?.success || !tabsData?.success) return;
 
   const snapshot = runtime.snapshot || { tabs: {} };
   const settings = runtime.settings || {};
+  const lifecycleSettings = lifecycle?.settings || {};
   const tabs = tabsData.tabs || [];
-  updateQuickCard(snapshot, settings, tabs);
-
-  if (!runtimeView || runtimeView.style.display === 'none') return;
-
-  const pressure = pressureText(snapshot.memory);
-  pressureLabel.textContent = pressure.label;
-  pressureLabel.className = pressure.className;
-
-  const available = Number(snapshot.memory?.availableCapacity || 0);
-  const total = Number(snapshot.memory?.capacity || 0);
-  pressureSub.textContent = total > 0
-    ? `${(available / 1024 ** 3).toFixed(1)} / ${(total / 1024 ** 3).toFixed(1)} GB RAM còn trống`
-    : 'Không đọc được physical memory';
-
+  const entries = snapshot.tabs || {};
+  const connected = connectedCount(snapshot);
   const generating = Number(snapshot.generatingCount || 0);
   const protectedCount = Number(snapshot.protectedCount || 0);
-  generatorLabel.textContent = `${generating} generating · ${protectedCount} protected`;
-  if (budgetSub) budgetSub.textContent = `Recommended budget: ${snapshot.parallelBudget || 1}`;
+  const sleeping = tabs.filter(tab => tab.discarded).length;
+  const idle = tabs.filter(tab => {
+    if (tab.discarded) return false;
+    const entry = entries[String(tab.id)];
+    return entry?.connected && entry.state === 'idle' && !tab.active;
+  }).length;
 
-  cooperativeToggle.checked = settings.cooperativeEnabled !== false;
-  parallelSelect.value = String(settings.maxParallelGenerators || 2);
-  if (settings.projectId && [...projectSelect.options].some(option => option.value === settings.projectId)) {
-    projectSelect.value = settings.projectId;
+  const pressureLevel = String(snapshot.memory?.level || 'unknown');
+  const pressure = pressureDescriptor(pressureLevel);
+  if (pressureLabel) {
+    pressureLabel.textContent = pressure.label;
+    pressureLabel.className = `runtime-system-pill ${pressureLevel}`;
+  }
+  if (pressureSub) pressureSub.textContent = pressure.detail;
+  if (systemSummary) {
+    const disconnected = Math.max(0, tabs.length - connected - sleeping);
+    const disconnectedNote = disconnected > 0 ? ` · ${disconnected} cần reload` : '';
+    systemSummary.textContent = `${connected}/${tabs.length} chat đang được theo dõi · ${protectedCount} đang được bảo vệ${disconnectedNote}`;
   }
 
-  const connected = connectedCount(snapshot);
-  if (liveSummary) liveSummary.textContent = `${tabs.length} mở · ${connected} runtime`;
+  if (openCount) openCount.textContent = String(tabs.length);
+  if (generatingCount) generatingCount.textContent = String(generating);
+  if (idleCount) idleCount.textContent = String(idle);
+  if (sleepingCount) sleepingCount.textContent = String(sleeping);
+  if (generatorLabel) generatorLabel.textContent = `${generating} đang trả lời · ${protectedCount} được bảo vệ`;
+  if (liveSummary) liveSummary.textContent = `${tabs.length} chat`;
+
+  const budget = Number(snapshot.parallelBudget || 1);
+  const ceiling = Number(settings.maxParallelGenerators || 2);
+  if (budgetSub) {
+    budgetSub.textContent = settings.cooperativeEnabled === false
+      ? `Tự động điều phối đang tắt · giới hạn cấu hình ${ceiling} chat.`
+      : `Hiện cho phép ${budget} chat trả lời đồng thời · trần ${ceiling}; Runtime tự giảm khi hệ thống căng.`;
+  }
+
+  applyRuntimeControls(settings, lifecycleSettings);
   renderTabs(snapshot, tabs);
 }
 
 async function bindAllTabsToWorkspace() {
-  const projectId = projectSelect.value;
+  const projectId = projectSelect?.value || '';
   if (!projectId) {
-    showRuntimeToast('Hãy chọn project chung trước.');
+    showRuntimeToast('Hãy chọn project chung trước.', 'warning');
     return;
   }
 
-  startButton.disabled = true;
+  if (startButton) startButton.disabled = true;
   try {
     const [projectsData, tabsData] = await Promise.all([
       chrome.storage.local.get('projectVault'),
@@ -253,8 +347,6 @@ async function bindAllTabsToWorkspace() {
     await chrome.runtime.sendMessage({
       type: 'RUNTIME_SET_SETTINGS',
       settings: {
-        cooperativeEnabled: true,
-        maxParallelGenerators: Number(parallelSelect.value || 2),
         projectId: project.id,
         projectName: project.name
       }
@@ -278,14 +370,39 @@ async function bindAllTabsToWorkspace() {
       }
     }
 
-    showRuntimeToast(failed > 0
-      ? `Đã gắn ${bound}/${tabs.length} tab; ${failed} tab cần reload rồi thử lại.`
-      : `Đã gắn toàn bộ ${bound} tab vào ${project.name}.`);
+    showRuntimeToast(
+      failed > 0
+        ? `Đã gắn ${bound}/${tabs.length} chat; ${failed} chat cần reload.`
+        : `Đã gắn ${bound} chat vào ${project.name}.`,
+      failed > 0 ? 'warning' : 'success'
+    );
     await refreshRuntime();
   } catch (error) {
-    showRuntimeToast(`Không bật được workspace: ${error.message}`);
+    showRuntimeToast(`Không gắn được project: ${error.message}`, 'warning');
   } finally {
-    startButton.disabled = false;
+    if (startButton) startButton.disabled = false;
+  }
+}
+
+async function optimizeBackgroundNow() {
+  if (!optimizeButton) return;
+  optimizeButton.disabled = true;
+  optimizeButton.textContent = 'Đang kiểm tra…';
+  try {
+    const result = await chrome.runtime.sendMessage({ type: 'DISCARD_ALL_BACKGROUND' });
+    const slept = Number(result?.discardedCount || 0);
+    const protectedCount = Number(result?.protectedCount || 0);
+    if (slept > 0) {
+      showRuntimeToast(`Đã cho ${slept} chat nền an toàn ngủ${protectedCount ? `; giữ ${protectedCount} chat đang làm việc` : ''}.`, 'success');
+    } else if (protectedCount > 0) {
+      showRuntimeToast(`${protectedCount} chat đang làm việc nên được giữ nguyên.`, 'info');
+    } else {
+      showRuntimeToast('Không có chat nền nào cần ngủ.', 'info');
+    }
+    await refreshRuntime();
+  } finally {
+    optimizeButton.disabled = false;
+    optimizeButton.textContent = 'Tối ưu chat nền ngay';
   }
 }
 
@@ -310,24 +427,58 @@ function hideRuntimeView() {
 }
 
 runtimeNav?.addEventListener('click', showRuntimeView);
-quickCard?.addEventListener('click', showRuntimeView);
 for (const id of ['tab-nav-active', 'tab-nav-stashed', 'tab-nav-projects', 'tab-nav-memory']) {
   document.getElementById(id)?.addEventListener('click', hideRuntimeView);
 }
 
 startButton?.addEventListener('click', bindAllTabsToWorkspace);
+optimizeButton?.addEventListener('click', optimizeBackgroundNow);
+
 cooperativeToggle?.addEventListener('change', async () => {
+  cooperativeToggle.disabled = true;
+  try {
+    await chrome.runtime.sendMessage({
+      type: 'RUNTIME_SET_SETTINGS',
+      settings: { cooperativeEnabled: cooperativeToggle.checked }
+    });
+    showRuntimeToast(cooperativeToggle.checked ? 'Đã bật tự động điều phối.' : 'Đã tắt tự động điều phối.', 'success');
+    await refreshRuntime();
+  } finally {
+    cooperativeToggle.disabled = false;
+  }
+});
+
+autoSleepToggle?.addEventListener('change', async () => {
+  autoSleepToggle.disabled = true;
+  try {
+    await chrome.runtime.sendMessage({
+      type: 'SAVE_SETTINGS',
+      settings: { autoDiscardEnabled: autoSleepToggle.checked }
+    });
+    showRuntimeToast(autoSleepToggle.checked ? 'Đã bật tự sleep chat idle.' : 'Đã tắt tự sleep chat idle.', 'success');
+    await refreshRuntime();
+  } finally {
+    autoSleepToggle.disabled = false;
+  }
+});
+
+idleMinutesSelect?.addEventListener('change', async () => {
+  const minutes = Math.max(1, Number(idleMinutesSelect.value || 5));
   await chrome.runtime.sendMessage({
-    type: 'RUNTIME_SET_SETTINGS',
-    settings: { cooperativeEnabled: cooperativeToggle.checked }
+    type: 'SAVE_SETTINGS',
+    settings: { discardIdleMinutes: minutes }
   });
+  showRuntimeToast(`Chat nền sẽ được xét sleep sau ${minutes} phút idle.`, 'success');
   await refreshRuntime();
 });
+
 parallelSelect?.addEventListener('change', async () => {
+  const maximum = Math.max(1, Math.min(8, Number(parallelSelect.value || 2)));
   await chrome.runtime.sendMessage({
     type: 'RUNTIME_SET_SETTINGS',
-    settings: { maxParallelGenerators: Number(parallelSelect.value || 2) }
+    settings: { maxParallelGenerators: maximum }
   });
+  showRuntimeToast(`Đã đặt trần trả lời đồng thời: ${maximum} chat.`, 'success');
   await refreshRuntime();
 });
 
@@ -337,6 +488,7 @@ document.addEventListener('visibilitychange', () => {
 
 chrome.storage.onChanged.addListener(changes => {
   if (changes.projectVault) loadProjects().catch(() => {});
+  if (changes.settings || changes.tabflowRuntimeSettingsV3) refreshRuntime().catch(() => {});
 });
 
 loadProjects().then(refreshRuntime).catch(() => {});
