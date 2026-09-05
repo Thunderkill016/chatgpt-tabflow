@@ -83,6 +83,49 @@ try {
   await panel.locator('#tab-nav-runtime').click();
   await panel.waitForFunction(() => document.getElementById('runtime-view')?.style.display === 'flex');
   assert.equal(await panel.locator('#runtime-view').isVisible(), true, 'Runtime view opens from Control Center nav');
+  assert.equal(await panel.locator('text=Recommended budget').count(), 0, 'Runtime hides internal scheduler jargon');
+  assert.equal(await panel.locator('.runtime-locked').textContent(), 'Luôn bật', 'productive-chat protection is visibly non-optional');
+
+  await panel.locator('#runtime-coop-toggle').uncheck();
+  await panel.waitForFunction(async () => {
+    const data = await chrome.storage.local.get('tabflowRuntimeSettingsV3');
+    return data.tabflowRuntimeSettingsV3?.cooperativeEnabled === false;
+  });
+  await panel.locator('#runtime-coop-toggle').check();
+  await panel.waitForFunction(async () => {
+    const data = await chrome.storage.local.get('tabflowRuntimeSettingsV3');
+    return data.tabflowRuntimeSettingsV3?.cooperativeEnabled === true;
+  });
+
+  await panel.locator('#runtime-auto-sleep-toggle').uncheck();
+  await panel.waitForFunction(async () => {
+    const data = await chrome.storage.local.get('settings');
+    return data.settings?.autoDiscardEnabled === false;
+  });
+  assert.equal(await panel.locator('#runtime-idle-minutes').isDisabled(), true, 'idle threshold disables when auto-sleep is off');
+  await panel.locator('#runtime-auto-sleep-toggle').check();
+  await panel.waitForFunction(async () => {
+    const data = await chrome.storage.local.get('settings');
+    return data.settings?.autoDiscardEnabled === true;
+  });
+
+  await panel.locator('#runtime-idle-minutes').selectOption('10');
+  await panel.waitForFunction(async () => {
+    const data = await chrome.storage.local.get('settings');
+    return Number(data.settings?.discardIdleMinutes) === 10;
+  });
+  await panel.locator('#runtime-idle-minutes').selectOption('5');
+
+  await panel.locator('#runtime-parallel-select').selectOption('4');
+  await panel.waitForFunction(async () => {
+    const data = await chrome.storage.local.get('tabflowRuntimeSettingsV3');
+    return Number(data.tabflowRuntimeSettingsV3?.maxParallelGenerators) === 4;
+  });
+  await panel.locator('#runtime-parallel-select').selectOption('2');
+
+  await panel.locator('#runtime-optimize-btn').click();
+  await panel.waitForFunction(() => document.getElementById('runtime-optimize-btn')?.disabled === false);
+  assert.equal(await panel.locator('#runtime-optimize-btn').textContent(), 'Tối ưu chat nền ngay', 'optimize action returns to ready state');
 
   const workspacePagesBefore = context.pages().filter(page => page.url().includes('/workspace/index.html')).length;
   await panel.locator('#btn-open-coding-hub').click();
@@ -94,7 +137,7 @@ try {
     workspacePagesBefore
   );
 
-  console.log('✅ Workspace side-panel policy + Control Center Chromium E2E passed');
+  console.log('✅ Workspace side-panel policy + Control Center Runtime Chromium E2E passed');
 } finally {
   if (context) await context.close();
   fs.rmSync(userDataDir, { recursive: true, force: true });
