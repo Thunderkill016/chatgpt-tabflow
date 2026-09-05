@@ -31,10 +31,12 @@ const required = [
   'memory/continuity.js',
   'memory/versioning.js',
   'memory/binding-identity.js',
+  'memory/workspace-inheritance.js',
   'memory/memory-background.js',
   'workers/memory-worker.js',
   'offscreen/memory.html',
   'offscreen/memory-host.js',
+  'content-scripts/frame-scope-gate.js',
   'content-scripts/memory-fetch-bridge.js',
   'content-scripts/memory-client.js',
   'v3/service-worker.js',
@@ -57,13 +59,15 @@ check(manifest.background?.service_worker === 'v3/service-worker.js', 'v3 wrappe
 check(manifest.side_panel?.default_path === 'v3/sidepanel.html', 'Cognitive Memory side panel is active');
 
 const mainEntry = manifest.content_scripts.find(item => item.world === 'MAIN');
-const memoryEntry = manifest.content_scripts.find(item => item.js?.length === 1 && item.js.includes('content-scripts/memory-client.js'));
+const memoryEntry = manifest.content_scripts.find(item => item.world !== 'MAIN' && item.js?.includes('content-scripts/memory-client.js'));
 const topUiEntry = manifest.content_scripts.find(item => item.js?.includes('content-scripts/runtime-agent.js') || item.js?.includes('content-scripts/booster.js'));
 const mainScripts = mainEntry?.js || [];
 check(mainScripts.indexOf('content-scripts/memory-fetch-bridge.js') >= 0, 'MAIN-world RAG bridge registered');
 check(mainScripts.indexOf('content-scripts/memory-fetch-bridge.js') < mainScripts.indexOf('content-scripts/fetch-proxy.js'), 'Memory bridge wraps native fetch before Turbo Loader');
 check(mainEntry?.all_frames === true, 'MAIN-world memory/fetch layer runs inside ChatGPT workspace subframes');
 check(memoryEntry?.all_frames === true, 'Isolated memory client runs inside ChatGPT workspace subframes');
+check(mainEntry?.js?.[0] === 'content-scripts/frame-scope-gate.js', 'MAIN hooks fail closed through frame scope gate');
+check(memoryEntry?.js?.[0] === 'content-scripts/frame-scope-gate.js', 'isolated memory fails closed through frame scope gate');
 check(topUiEntry?.all_frames !== true, 'runtime/booster remain top-frame only until frame-aware scheduler migration');
 check(!memoryEntry?.js?.includes('content-scripts/runtime-agent.js'), 'frame-aware memory entry does not accidentally enable tab-keyed runtime in subframes');
 check(!memoryEntry?.js?.includes('content-scripts/booster.js'), 'workspace panes do not duplicate top-level booster UI');
@@ -76,6 +80,7 @@ check(!background.includes('chrome.runtime.onMessage.addListener'), 'Memory back
 check(background.includes('chrome.tabs.onRemoved.addListener'), 'Transient actor bindings are cleaned on tab close');
 check(background.includes('senderDocumentId(port)'), 'Memory binding resolves MV3 sender document identity');
 check(background.includes('memoryActorKey(tabId, frameId, documentId)'), 'Memory background keys subframe actors by tab/frame/document');
+check(background.includes("source: 'workspace-default'"), 'new workspace panes inherit the selected common project only through background policy');
 check(identity.includes("if (frame === 0) return `${tabId}:0`"), 'Top-frame project binding survives document reloads');
 check(identity.includes('`${tabId}:${frame}:${doc}`'), 'Subframe binding includes documentId when available');
 check(identity.includes('frameId === 0 ? [actor, String(tabId)] : [actor]'), 'Legacy tab-only binding is inherited only by top frame');

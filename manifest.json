@@ -51,6 +51,7 @@
         "https://chat.openai.com/*"
       ],
       "js": [
+        "content-scripts/frame-scope-gate.js",
         "content-scripts/memory-fetch-bridge.js",
         "content-scripts/fetch-proxy.js"
       ],
@@ -64,6 +65,7 @@
         "https://chat.openai.com/*"
       ],
       "js": [
+        "content-scripts/frame-scope-gate.js",
         "content-scripts/memory-client.js"
       ],
       "run_at": "document_idle",

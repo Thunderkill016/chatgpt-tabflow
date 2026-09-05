@@ -3,12 +3,19 @@ import {
   memoryActorKey,
   memoryBindingLookupKeys
 } from './binding-identity.js';
+import {
+  WORKSPACE_PROJECT_VAULT_KEY,
+  WORKSPACE_RUNTIME_SETTINGS_KEY,
+  isWorkspaceMemorySender,
+  selectWorkspaceProject
+} from './workspace-inheritance.js';
 
 const OFFSCREEN_PATH = 'offscreen/memory.html';
 const CLIENT_PORT = 'TABFLOW_MEMORY_CLIENT';
 const HOST_PORT = 'TABFLOW_MEMORY_OFFSCREEN';
 const SESSION_BINDINGS_KEY = 'tabflowMemoryTabBindingsV3';
 const CONVERSATION_BINDINGS_KEY = 'tabflowMemoryConversationBindingsV3';
+const WORKSPACE_PATH = 'workspace/index.html';
 
 let offscreenPort = null;
 let offscreenCreating = null;
@@ -48,6 +55,25 @@ function senderFrameId(port) {
 
 function senderDocumentId(port) {
   return typeof port?.sender?.documentId === 'string' ? port.sender.documentId : '';
+}
+
+function actorIdentity(port, payload = {}) {
+  const senderTabId = port?.sender?.tab?.id;
+  if (Number.isInteger(senderTabId)) {
+    return {
+      tabId: senderTabId,
+      frameId: senderFrameId(port),
+      documentId: senderDocumentId(port),
+      fromSender: true
+    };
+  }
+
+  return {
+    tabId: Number.isInteger(payload.tabId) ? payload.tabId : null,
+    frameId: Number.isInteger(payload.frameId) && payload.frameId >= 0 ? payload.frameId : 0,
+    documentId: typeof payload.documentId === 'string' ? payload.documentId : '',
+    fromSender: false
+  };
 }
 
 async function hasOffscreenDocument() {
@@ -141,6 +167,22 @@ async function getConversationBindings() {
     : {};
 }
 
+async function resolveWorkspaceDefaultProject(port) {
+  const workspaceUrl = chrome.runtime.getURL(WORKSPACE_PATH);
+  if (!isWorkspaceMemorySender(port?.sender, workspaceUrl)) return null;
+
+  const data = await chrome.storage.local.get([
+    WORKSPACE_RUNTIME_SETTINGS_KEY,
+    WORKSPACE_PROJECT_VAULT_KEY
+  ]);
+  const project = selectWorkspaceProject(
+    data[WORKSPACE_RUNTIME_SETTINGS_KEY],
+    data[WORKSPACE_PROJECT_VAULT_KEY]
+  );
+  if (!project) return null;
+  return callHost('UPSERT_PROJECT', { project });
+}
+
 async function saveConversationBinding(conversationKey, binding) {
   if (!conversationKey || !binding?.projectId) return;
   const persisted = await getConversationBindings();
@@ -188,14 +230,8 @@ async function resolveBinding(port, payload = {}) {
     };
   }
 
-  const senderTabId = port?.sender?.tab?.id;
-  const tabId = Number.isInteger(payload.tabId) ? payload.tabId : senderTabId;
-  const frameId = Number.isInteger(payload.frameId) && payload.frameId >= 0
-    ? payload.frameId
-    : senderFrameId(port);
-  const documentId = typeof payload.documentId === 'string'
-    ? payload.documentId
-    : senderDocumentId(port);
+  const identity = actorIdentity(port, payload);
+  const { tabId, frameId, documentId } = identity;
   const actorKey = memoryActorKey(tabId, frameId, documentId);
   const tabUrl = payload.tabUrl || payload.conversation?.url || port?.sender?.url || port?.sender?.tab?.url || '';
   const conversationKey = payload.conversation?.id?.startsWith('new:')
@@ -240,25 +276,41 @@ async function resolveBinding(port, payload = {}) {
     }
   }
 
+  if (actorKey && frameId > 0 && identity.fromSender) {
+    const projectRecord = await resolveWorkspaceDefaultProject(port);
+    if (projectRecord?.id) {
+      const inherited = {
+        projectId: projectRecord.id,
+        project: projectRecord,
+        conversationKey,
+        boundAt: Date.now()
+      };
+      const session = await getSessionBindings();
+      await saveActorBinding(session, actorKey, inherited);
+      if (conversationKey) await saveConversationBinding(conversationKey, inherited);
+      return { ...inherited, actorKey, frameId, source: 'workspace-default' };
+    }
+  }
+
   return null;
 }
 
 async function runClientRequest(port, type, payload = {}) {
   if (type === 'PING') {
     const worker = await callHost('PING', {});
-    return { worker, protocol: 2 };
+    return { worker, protocol: 3 };
   }
 
   if (type === 'BIND_PROJECT') {
-    const tabId = Number.isInteger(payload.tabId) ? payload.tabId : port?.sender?.tab?.id;
-    const frameId = Number.isInteger(payload.frameId) && payload.frameId >= 0
-      ? payload.frameId
-      : senderFrameId(port);
-    const documentId = typeof payload.documentId === 'string'
-      ? payload.documentId
-      : senderDocumentId(port);
+    const identity = actorIdentity(port, payload);
     const tabUrl = payload.tabUrl || payload.conversation?.url || port?.sender?.url || port?.sender?.tab?.url || '';
-    return bindProject({ tabId, frameId, documentId, tabUrl, project: payload.project });
+    return bindProject({
+      tabId: identity.tabId,
+      frameId: identity.frameId,
+      documentId: identity.documentId,
+      tabUrl,
+      project: payload.project
+    });
   }
 
   if (type === 'GET_BINDING') return resolveBinding(port, payload);
