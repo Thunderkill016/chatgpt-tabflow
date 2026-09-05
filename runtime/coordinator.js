@@ -78,7 +78,8 @@ function sanitizeEntry(tabId, previous = {}, patch = {}) {
     lastActivityAt: Number(patch.lastActivityAt ?? previous.lastActivityAt ?? Date.now()) || Date.now(),
     protectUntil: Number(patch.protectUntil ?? previous.protectUntil ?? 0) || 0,
     updatedAt: Date.now(),
-    mode: previous.mode || 'eco'
+    mode: previous.mode || 'eco',
+    connected: Boolean(previous.connected)
   };
 }
 
@@ -141,7 +142,7 @@ function postToTab(tabId, message) {
 }
 
 async function syncAutoDiscardable(entry, now = Date.now()) {
-  if (!Number.isInteger(entry?.tabId)) return;
+  if (!Number.isInteger(entry?.tabId) || !entry.connected) return;
   const desired = !shouldProtectFromDiscard(entry, now);
   if (autoDiscardableByTab.get(entry.tabId) === desired) return;
   try {
@@ -162,10 +163,13 @@ async function recomputeAndBroadcast() {
 
     const now = Date.now();
     const entries = Object.values(snapshot.tabs || {});
-    const liveTabCount = entries.length;
-    const generatingCount = entries.filter(entry => entry.state === RUNTIME_STATES.GENERATING).length;
-    const typingCount = entries.filter(entry => entry.state === RUNTIME_STATES.TYPING).length;
-    const idleCount = entries.filter(entry => entry.state === RUNTIME_STATES.IDLE).length;
+    for (const entry of entries) entry.connected = portsByTab.has(entry.tabId);
+
+    const connectedEntries = entries.filter(entry => entry.connected);
+    const liveTabCount = connectedEntries.length;
+    const generatingCount = connectedEntries.filter(entry => entry.state === RUNTIME_STATES.GENERATING).length;
+    const typingCount = connectedEntries.filter(entry => entry.state === RUNTIME_STATES.TYPING).length;
+    const idleCount = connectedEntries.filter(entry => entry.state === RUNTIME_STATES.IDLE).length;
     const parallelBudget = settings.cooperativeEnabled
       ? recommendedParallelGenerators(pressure.level, settings.maxParallelGenerators, liveTabCount)
       : Math.max(1, Math.min(8, liveTabCount || 1));
@@ -174,19 +178,22 @@ async function recomputeAndBroadcast() {
       const mode = settings.cooperativeEnabled
         ? deriveExecutionMode(entry, { generatingCount, parallelBudget })
         : (entry.focused || entry.visible ? 'interactive' : 'producer');
-      entry.mode = mode;
-      entry.protectedFromDiscard = shouldProtectFromDiscard(entry, now);
-      postToTab(entry.tabId, {
-        type: 'RUNTIME_MODE',
-        mode,
-        pressure: pressure.level,
-        parallelBudget,
-        liveTabCount,
-        generatingCount,
-        cooperativeEnabled: settings.cooperativeEnabled,
-        protectedFromDiscard: entry.protectedFromDiscard
-      });
-      syncAutoDiscardable(entry, now).catch(() => {});
+      entry.mode = entry.connected ? mode : 'disconnected';
+      entry.protectedFromDiscard = entry.connected && shouldProtectFromDiscard(entry, now);
+
+      if (entry.connected) {
+        postToTab(entry.tabId, {
+          type: 'RUNTIME_MODE',
+          mode,
+          pressure: pressure.level,
+          parallelBudget,
+          liveTabCount,
+          generatingCount,
+          cooperativeEnabled: settings.cooperativeEnabled,
+          protectedFromDiscard: entry.protectedFromDiscard
+        });
+        syncAutoDiscardable(entry, now).catch(() => {});
+      }
     }
 
     snapshot.tabs = Object.fromEntries(entries.map(entry => [String(entry.tabId), entry]));
@@ -196,7 +203,7 @@ async function recomputeAndBroadcast() {
     snapshot.generatingCount = generatingCount;
     snapshot.typingCount = typingCount;
     snapshot.idleCount = idleCount;
-    snapshot.protectedCount = entries.filter(entry => entry.protectedFromDiscard).length;
+    snapshot.protectedCount = connectedEntries.filter(entry => entry.protectedFromDiscard).length;
     snapshot.cooperativeEnabled = settings.cooperativeEnabled;
     snapshot.updatedAt = Date.now();
     await writeSnapshot(snapshot);
@@ -210,7 +217,7 @@ async function handlePortMessage(port, message) {
   const type = message?.type;
 
   if (type === 'HELLO' || type === 'STATUS') {
-    await mutateTab(tabId, message.payload || {});
+    await mutateTab(tabId, { ...(message.payload || {}), connected: true });
     await recomputeAndBroadcast();
     return;
   }
@@ -218,6 +225,7 @@ async function handlePortMessage(port, message) {
   if (type === 'SUBMIT_INTENT') {
     await mutateTab(tabId, {
       ...(message.payload || {}),
+      connected: true,
       state: RUNTIME_STATES.GENERATING,
       protectUntil: Math.max(Date.now() + 45_000, Number(message.payload?.protectUntil || 0)),
       lastActivityAt: Date.now()
@@ -239,6 +247,8 @@ chrome.runtime.onConnect.addListener(port => {
   });
   port.onDisconnect.addListener(() => {
     if (portsByTab.get(tabId) === port) portsByTab.delete(tabId);
+    autoDiscardableByTab.delete(tabId);
+    recomputeAndBroadcast().catch(() => {});
   });
 });
 
