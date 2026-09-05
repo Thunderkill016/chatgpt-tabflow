@@ -54,7 +54,7 @@ assert.equal(clampSpotlightRatio(0.99, 1920), MAX_SPOTLIGHT_RATIO);
 assert.ok(spotlightMaxRatio(1080) < MAX_SPOTLIGHT_RATIO, 'narrow viewport preserves secondary minimum width');
 assert.equal(clampSpotlightRatio(0.99, 1080), spotlightMaxRatio(1080));
 assert.equal(spotlightRatioFromPointer(960, 1920), 0.5);
-assert.equal(nudgeSpotlightRatio(0.64, 0.02, 1920), 0.66);
+assert.ok(Math.abs(nudgeSpotlightRatio(0.64, 0.02, 1920) - 0.66) < 1e-9);
 assert.equal(nudgeSpotlightRatio(0.49, -0.05, 1920), MIN_SPOTLIGHT_RATIO);
 assert.equal(spotlightRatioCss(0.64, 1920), '64.00%');
 
