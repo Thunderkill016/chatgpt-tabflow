@@ -150,4 +150,4 @@ For a file intended for X/Facebook, prefer **Social Ready** rather than recordin
 
 `test/recorder-browser-e2e.mjs` launches the unpacked extension in Chromium and checks the Social Ready locks plus real `MediaRecorder` recording when the Chromium build exposes the required H.264/AAC MP4 MIME.
 
-The whole-extension browser harness also waits for observable VFS convergence instead of sleeping for a fixed interval, so unrelated CI load does not make the recorder/social gate look broken.
+The whole-extension browser harness also waits for observable VFS convergence instead of sleeping for a fixed interval, so unrelated CI load does not make the recorder/social gate look broken. The Social Ready wave passed both `quality` and unpacked-extension Chromium E2E before being handed off for production use.
