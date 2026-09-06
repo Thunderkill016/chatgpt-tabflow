@@ -1,36 +1,28 @@
 # TabFlow Capture Studio
 
-TabFlow includes a local-first screen recorder and screenshot workflow for capturing a monitor, window, or browser tab without uploading the recording to a remote service.
+TabFlow Capture Studio is a local-first screen recorder and screenshot workflow for monitor, window, or browser-tab capture.
 
-## Capture contract
-
-- 4K requests at most 3840×2160 and never fake-upscale a smaller source.
-- Master mode keeps 4K/1440p/1080p/Native and 30/60 FPS controls.
-- MP4 is preferred when supported; Master can fall back to WebM.
-- System/source audio and optional microphone can be mixed.
-- Pause/resume/stop, PNG screenshot, direct-to-file chunk streaming and Chrome Downloads are supported.
-- Capture remains local-only and has no network upload path.
+## Master
+- Real source quality; 4K requests max 3840×2160 and never fake-upscale smaller sources.
+- 4K/1440p/1080p/Native, 30/60 FPS.
+- MP4 preferred with WebM fallback.
+- System/source audio + optional mic mixing.
+- Pause/resume/stop, PNG screenshot, direct-to-file 1s chunks, Chrome Downloads.
 
 ## Social Ready
+- **Social Ready:** 1080p30 MP4; strict H.264/AVC + AAC-LC preflight.
+- **X Free:** same encoding and auto-stop at 2:19.
+- Post-record social check validates locally knowable codec/container intent, dimensions, FPS, duration, size and requested bitrate.
+- No upload path.
 
-A valid high-quality Master file can still fall outside a social uploader's ingest envelope. Capture Studio therefore has:
+At the September 2026 review, X's ordinary non-Premium web uploader documents 140 seconds, 512 MB, max 1920×1200 landscape / 1200×1900 portrait, 1:2.39–2.39:1 aspect ratio, 40 FPS and 25 Mbps. X Media Studio is a separate surface with different limits.
 
-- **Master** — normal high-quality capture controls.
-- **Social Ready** — locks to 1080p30 MP4 and requires explicit H.264/AVC + AAC-LC support.
-- **X Free** — same Social Ready encoding and auto-stops at 2:19, one second before X's documented 140-second non-Premium limit.
+Facebook uses the same conservative 1080p30 H.264/AAC interoperability preset; TabFlow does not claim to predict every Meta account/product ingest rule.
 
-The conservative cross-platform target is 1920×1080, 30 FPS, H.264/AAC-LC MP4 at roughly 5 Mbps. For Facebook this is an interoperability preset, not a promise about every Meta account/product-specific ingest path.
+## Upstream policy
+Screenity was inspected for general browser-recorder patterns. It is GPL-3.0; no Screenity source code is copied into this MIT project.
 
-At the September 2026 review, X's ordinary web uploader documents for non-Premium posts: 140 seconds, 512 MB, maximum landscape resolution 1920×1200 (portrait 1200×1900), aspect ratio 1:2.39 through 2.39:1, maximum 40 FPS and 25 Mbps. X Media Studio is a different upload surface with different limits.
-
-The post-record Social check evaluates codec/container intent, dimensions, FPS, duration, file size and requested bitrate locally; it never uploads the file.
-
-## Upstream and license policy
-
-Screenity was inspected as a mature recorder reference for platform-level patterns such as runtime codec negotiation, post-selection constraints and bounded chunks. Screenity is GPL-3.0; no Screenity source code is copied into TabFlow, which remains MIT.
-
-## Automated gates
-
+## Gates
 - `test/recorder-core.test.mjs`
 - `test/social-profile.test.mjs`
 - `scripts/verify-recorder.mjs`
