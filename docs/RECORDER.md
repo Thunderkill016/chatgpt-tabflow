@@ -35,41 +35,6 @@ Chrome Downloads is used for the fallback export, screenshots, and the recent-do
 
 Screenity is GPL-3.0. **No Screenity source code is copied into TabFlow.** TabFlow remains MIT and implements these platform patterns independently.
 
-## Architecture
-
-```text
-Control Center
-   │
-   └── 🎥 Quay / Chụp 4K
-              │
-              ▼
-      recorder/index.html
-              │
-      getDisplayMedia picker
-              │
-      ┌───────┴────────┐
-      │                │
-   video track      audio tracks
-      │           system + optional mic
-      │                │
-      └───────┬────────┘
-              ▼
-         MediaStream
-              │
-      MIME / bitrate policy
-              │
-         MediaRecorder
-              │  1s chunks
-      ┌───────┴────────────┐
-      │                    │
-File System Access   in-memory fallback
- direct chunk write      Blob/File
-      │                    │
-      └────────┬───────────┘
-               ▼
-         local video file
-```
-
 ## Features
 
 - monitor / window / tab selection through Chrome's native picker;
@@ -77,72 +42,59 @@ File System Access   in-memory fallback
 - 30 FPS and 60 FPS in Master mode;
 - MP4 preferred with WebM fallback in Master mode;
 - system/source audio request;
-- optional microphone capture;
-- microphone + source-audio mixing when both tracks exist;
+- optional microphone capture and audio mixing;
 - pause / resume / stop;
 - actual captured resolution, FPS, format and audio status;
-- full-resolution PNG screenshot from the live capture track or recorded preview;
-- direct-to-file chunk streaming for long 4K sessions when File System Access is available;
-- browser-download fallback;
-- recent TabFlow video list with Open / Show in folder;
+- full-resolution PNG screenshot;
+- direct-to-file chunk streaming for long 4K sessions;
+- Chrome Downloads fallback and recent-video list;
 - local-only design: recorder code contains no upload/fetch path.
 
 ## Social Ready
 
-Master recordings optimize for source quality, not for social-platform ingest. A 4K60 WebM or a long 4K MP4 can therefore be a perfectly valid local recording while still being rejected by a social uploader.
+Master recordings optimize for source quality, not for social-platform ingest. A 4K60 WebM or a long 4K MP4 can therefore be a valid local recording while still being rejected by a social uploader.
 
-Capture Studio now has three output intents:
+Capture Studio has three output intents:
 
-- **Master** — keeps the normal 4K/60 FPS controls.
-- **Social Ready** — locks the capture to `1080p`, `30 FPS`, and MP4. Before recording it requires an explicit `H.264/AVC + AAC-LC` MediaRecorder MIME instead of silently calling a WebM fallback "social ready".
-- **X Free** — uses the same Social Ready encoding and auto-stops at `2:19`, one second before X's documented 140-second non-Premium limit.
+- **Master** — normal 4K/60 FPS controls.
+- **Social Ready** — locks to `1080p`, `30 FPS`, MP4 and requires an explicit `H.264/AVC + AAC-LC` MediaRecorder MIME.
+- **X Free** — same Social Ready encoding and auto-stops at `2:19`, one second before X's documented 140-second non-Premium limit.
 
-The cross-platform target is deliberately conservative: `1920×1080`, `30 FPS`, H.264/AAC-LC MP4, and roughly 5 Mbps video bitrate. It is intended to avoid the common failure mode where a high-quality local master is outside a social platform's ingest envelope. For Facebook this is a conservative interoperability preset, not a claim that TabFlow can predict every account/product-specific Meta ingest rule.
+The cross-platform target is deliberately conservative: `1920×1080`, `30 FPS`, H.264/AAC-LC MP4, roughly 5 Mbps video bitrate. For Facebook this is an interoperability preset, not a claim that TabFlow can predict every account/product-specific Meta ingest rule.
 
 ### X web limits
 
-As of the September 2026 implementation review, X's own standard web-upload documentation lists the following for non-Premium posts:
+At the September 2026 implementation review, X's standard web-upload documentation lists for non-Premium posts:
 
 - maximum duration: `140 seconds`;
 - maximum file size: `512 MB`;
-- web maximum landscape resolution: `1920×1200` (portrait `1200×1900`);
-- aspect-ratio range: `1:2.39` through `2.39:1`;
+- maximum landscape resolution: `1920×1200` (portrait `1200×1900`);
+- aspect ratio: `1:2.39` through `2.39:1`;
 - maximum frame rate: `40 FPS`;
 - maximum bitrate: `25 Mbps`.
 
-This is why TabFlow Social Ready uses **30 FPS**, not 60 FPS. X Media Studio has a different upload specification that can accept 60 FPS; it must not be confused with the ordinary x.com post uploader.
+This is why Social Ready uses **30 FPS**, not 60 FPS. X Media Studio is a different upload surface and has different limits.
 
-The Social check after recording evaluates the limits that TabFlow can know locally (container/codec intent, dimensions, FPS, duration, size and requested bitrate). It does not upload the file or claim that an external platform will accept an account-specific upload.
+The post-record Social check evaluates what TabFlow can know locally: codec/container intent, dimensions, FPS, duration, file size and requested bitrate. It never uploads the file and does not claim account-specific acceptance.
 
 ## Performance policy
 
-The recorder bitrate is calculated from actual captured width, height and selected FPS and is clamped to a practical range. 4K60 can require roughly twice the encoding/write throughput of 4K30 and may be constrained by the machine, GPU encoder, selected source, filesystem, or Chrome.
-
-For long 4K sessions:
-
-1. choose **Chọn file lưu trực tiếp** before recording;
-2. prefer 4K30 unless 60 FPS is actually needed;
-3. verify the `Nguồn` field after capture starts — it is the source of truth for real resolution;
-4. if system audio is missing, check the selected capture surface/OS because browsers do not expose system audio for every source/platform combination.
-
-For a file intended for X/Facebook, prefer **Social Ready** rather than recording a Master and hoping the uploader transcodes it.
+4K60 can require much more encode/write throughput than 4K30. For long 4K sessions, choose **Chọn file lưu trực tiếp** before recording. For X/Facebook, prefer **Social Ready** rather than recording a Master and relying on the uploader to transcode it.
 
 ## Privacy / security
 
 - Source selection always happens through Chrome's permission picker.
-- No silent background screen capture is implemented.
-- No remote upload endpoint is used.
-- The recorder page is an extension-owned page; it does not inject capture controls into ChatGPT's React tree.
-- Downloads permission is used only for exporting captures and reading/revealing the user's recent TabFlow downloads.
+- No silent background screen capture.
+- No remote upload endpoint.
+- Recorder UI is extension-owned and does not mutate ChatGPT's React tree.
+- Downloads permission is only for export/reveal/history of TabFlow captures.
 
 ## Automated gates
 
-`test/recorder-core.test.mjs` verifies deterministic capture policy logic.
+`test/recorder-core.test.mjs` covers deterministic capture policy.
 
-`test/social-profile.test.mjs` verifies strict H.264/AAC MIME detection, the 1080p30 Social/X Free profile, and X's 140-second / 512 MB / 40 FPS / 25 Mbps envelope.
+`test/social-profile.test.mjs` covers strict H.264/AAC detection, 1080p30 Social/X Free policy, and X's 140-second / 512 MB / 40 FPS / 25 Mbps envelope.
 
-`scripts/verify-recorder.mjs` verifies the extension contract and rejects regressions such as a network upload path.
+`scripts/verify-recorder.mjs` rejects capture regressions including network upload paths.
 
-`test/recorder-browser-e2e.mjs` launches the unpacked extension in Chromium and checks the Social Ready locks plus real `MediaRecorder` recording when the Chromium build exposes the required H.264/AAC MP4 MIME.
-
-The whole-extension browser harness waits for observable VFS convergence instead of sleeping for a fixed interval, so unrelated CI load does not make the recorder/social gate look broken.
+`test/recorder-browser-e2e.mjs` launches the unpacked extension in Chromium, validates Social Ready locks, and exercises real `MediaRecorder` when strict H.264/AAC MP4 is available.
