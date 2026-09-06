@@ -18,7 +18,8 @@
     "declarativeNetRequest",
     "offscreen",
     "unlimitedStorage",
-    "system.memory"
+    "system.memory",
+    "downloads"
   ],
   "host_permissions": [
     "https://chatgpt.com/*",
