@@ -7,46 +7,46 @@
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <div class="popup-header">
+  <header class="popup-header">
     <div class="popup-brand">
       <div class="popup-icon">⚡</div>
-      <span>ChatGPT TabFlow</span>
+      <div>
+        <strong>TabFlow</strong>
+        <span id="popup-version">v3.2.0</span>
+      </div>
     </div>
-    <span style="font-size: 11px; color: var(--accent-emerald); font-weight: 600;">Anti-Lag</span>
-  </div>
+    <span class="local-pill">Local-first</span>
+  </header>
 
-  <div class="stats-card">
-    <div class="stat-item">
-      <span id="popup-tab-count" class="stat-num">0</span>
-      <span class="stat-text">Tab ChatGPT</span>
+  <section class="summary-card" aria-label="Tổng quan ChatGPT">
+    <div><strong id="popup-tab-count">0</strong><span>chat</span></div>
+    <div><strong id="popup-generating-count">0</strong><span>đang trả lời</span></div>
+    <div><strong id="popup-sleeping-count">0</strong><span>đang ngủ</span></div>
+  </section>
+
+  <main class="actions">
+    <button id="btn-popup-hub" class="btn btn-primary" type="button">
+      <span>▦</span><span><strong>Unified Workspace</strong><small>Mở các chat trên một màn hình</small></span>
+    </button>
+    <button id="btn-popup-sidepanel" class="btn btn-secondary" type="button">
+      <span>◫</span><span><strong>Control Center</strong><small>Chats · Memory · Runtime · Projects</small></span>
+    </button>
+    <button id="btn-popup-recorder" class="btn btn-secondary" type="button">
+      <span>●</span><span><strong>Capture Studio</strong><small>Quay/chụp · 4K · Social Ready</small></span>
+    </button>
+
+    <div class="utility-row">
+      <button id="btn-popup-freeze" class="utility-btn" type="button">☾ Tối ưu chat nền</button>
+      <button id="btn-popup-group" class="utility-btn" type="button">▣ Gom Tab Group</button>
     </div>
-    <div class="stat-item" style="text-align: right;">
-      <span id="popup-ram-saved" class="stat-num">0 MB</span>
-      <span class="stat-text">RAM đã dọn</span>
-    </div>
-  </div>
+  </main>
 
-  <div class="actions">
-    <button id="btn-popup-hub" class="btn btn-primary" style="background: linear-gradient(135deg, #8b5cf6, #3b82f6); box-shadow: 0 4px 10px rgba(139, 92, 246, 0.4);">
-      <span>🖥️</span> Multi-Chat Coding Hub
-    </button>
-    <button id="btn-popup-freeze" class="btn btn-secondary">
-      <span>⚡</span> Turbo Freeze — Dọn RAM Ngay
-    </button>
-    <button id="btn-popup-sidepanel" class="btn btn-secondary">
-      <span>🚀</span> Mở Side Panel Workspace
-    </button>
-    <button id="btn-popup-group" class="btn btn-secondary">
-      <span>📁</span> Gom vào Tab Group
-    </button>
-  </div>
+  <div id="popup-toast" class="toast" role="status"></div>
 
-  <div id="popup-toast" class="toast"></div>
-
-  <div class="footer">
-    <span>Phím tắt: Alt+C</span>
-    <a id="link-options" class="footer-link">Cài đặt ⚙️</a>
-  </div>
+  <footer class="footer">
+    <span>Alt+C Control Center · Alt+F Sleep</span>
+    <button id="link-options" class="footer-link" type="button">Cài đặt</button>
+  </footer>
 
   <script src="popup.js"></script>
 </body>
