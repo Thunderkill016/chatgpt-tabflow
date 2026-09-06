@@ -29,29 +29,7 @@ function hasExistingFrameSource() {
   return liveTracks.length > 0 || Boolean(preview?.videoWidth && preview?.videoHeight);
 }
 
-async function frameFromStream(stream) {
-  const track = stream.getVideoTracks()[0];
-  if (!track) throw new Error('Nguồn đã chọn không có video track.');
-
-  try {
-    await track.applyConstraints(postSelectionConstraints({
-      preset: qualitySelect?.value || '4k',
-      fps: Number(fpsSelect?.value || 30)
-    }));
-  } catch (error) {
-    console.warn('[TabFlow Screenshot] capture constraints not fully applied:', error?.message || error);
-  }
-
-  if ('ImageCapture' in window) {
-    const bitmap = await new ImageCapture(track).grabFrame();
-    return {
-      drawable: bitmap,
-      width: bitmap.width,
-      height: bitmap.height,
-      close: () => bitmap.close?.()
-    };
-  }
-
+async function frameFromVideo(stream) {
   const video = document.createElement('video');
   video.muted = true;
   video.playsInline = true;
@@ -75,6 +53,36 @@ async function frameFromStream(stream) {
       video.srcObject = null;
     }
   };
+}
+
+async function frameFromStream(stream) {
+  const track = stream.getVideoTracks()[0];
+  if (!track) throw new Error('Nguồn đã chọn không có video track.');
+
+  try {
+    await track.applyConstraints(postSelectionConstraints({
+      preset: qualitySelect?.value || '4k',
+      fps: Number(fpsSelect?.value || 30)
+    }));
+  } catch (error) {
+    console.warn('[TabFlow Screenshot] capture constraints not fully applied:', error?.message || error);
+  }
+
+  if ('ImageCapture' in window) {
+    try {
+      const bitmap = await new ImageCapture(track).grabFrame();
+      return {
+        drawable: bitmap,
+        width: bitmap.width,
+        height: bitmap.height,
+        close: () => bitmap.close?.()
+      };
+    } catch (error) {
+      console.warn('[TabFlow Screenshot] ImageCapture fallback to video frame:', error?.message || error);
+    }
+  }
+
+  return frameFromVideo(stream);
 }
 
 async function standaloneScreenshot() {
