@@ -17,7 +17,7 @@ The product contract is **real source quality, not fake 4K**:
 
 The implementation uses the standard Screen Capture API (`navigator.mediaDevices.getDisplayMedia`) from a dedicated extension page. Chrome remains responsible for the user-visible source picker and capture permission.
 
-Media is encoded with `MediaRecorder`. The implementation probes `MediaRecorder.isTypeSupported()` and prefers MP4 when the running Chrome can actually construct/start that recorder; otherwise it falls back to WebM.
+Media is encoded with `MediaRecorder`. The implementation probes `MediaRecorder.isTypeSupported()` and prefers MP4 when the running Chrome can actually construct/start that recorder; otherwise it falls back to WebM for Master capture.
 
 For long high-resolution recordings, the preferred path is File System Access: a user explicitly picks the output file, then `MediaRecorder` chunks are written through `FileSystemWritableFileStream` instead of accumulating one giant final Blob in RAM.
 
@@ -74,8 +74,8 @@ File System Access   in-memory fallback
 
 - monitor / window / tab selection through Chrome's native picker;
 - 4K, 1440p, 1080p and Native presets;
-- 30 FPS and 60 FPS;
-- MP4 preferred with WebM fallback;
+- 30 FPS and 60 FPS in Master mode;
+- MP4 preferred with WebM fallback in Master mode;
 - system/source audio request;
 - optional microphone capture;
 - microphone + source-audio mixing when both tracks exist;
@@ -86,6 +86,33 @@ File System Access   in-memory fallback
 - browser-download fallback;
 - recent TabFlow video list with Open / Show in folder;
 - local-only design: recorder code contains no upload/fetch path.
+
+## Social Ready
+
+Master recordings optimize for source quality, not for social-platform ingest. A 4K60 WebM or a long 4K MP4 can therefore be a perfectly valid local recording while still being rejected by a social uploader.
+
+Capture Studio now has three output intents:
+
+- **Master** — keeps the normal 4K/60 FPS controls.
+- **Social Ready** — locks the capture to `1080p`, `30 FPS`, and MP4. Before recording it requires an explicit `H.264/AVC + AAC-LC` MediaRecorder MIME instead of silently calling a WebM fallback "social ready".
+- **X Free** — uses the same Social Ready encoding and auto-stops at `2:19`, one second before X's documented 140-second non-Premium limit.
+
+The cross-platform target is deliberately conservative: `1920×1080`, `30 FPS`, H.264/AAC-LC MP4, and roughly 5 Mbps video bitrate. It is intended to avoid the common failure mode where a high-quality local master is outside a social platform's ingest envelope.
+
+### X web limits
+
+As of the September 2026 implementation review, X's own standard web-upload documentation lists the following for non-Premium posts:
+
+- maximum duration: `140 seconds`;
+- maximum file size: `512 MB`;
+- web maximum landscape resolution: `1920×1200` (portrait `1200×1900`);
+- aspect-ratio range: `1:2.39` through `2.39:1`;
+- maximum frame rate: `40 FPS`;
+- maximum bitrate: `25 Mbps`.
+
+This is why TabFlow Social Ready uses **30 FPS**, not 60 FPS. X Media Studio has a different upload specification that can accept 60 FPS; it must not be confused with the ordinary x.com post uploader.
+
+The Social check after recording evaluates the limits that TabFlow can know locally (container/codec intent, dimensions, FPS, duration, size and requested bitrate). It does not upload the file or claim that an external platform will accept an account-specific upload.
 
 ## Performance policy
 
@@ -98,6 +125,8 @@ For long 4K sessions:
 3. verify the `Nguồn` field after capture starts — it is the source of truth for real resolution;
 4. if system audio is missing, check the selected capture surface/OS because browsers do not expose system audio for every source/platform combination.
 
+For a file intended for X/Facebook, prefer **Social Ready** rather than recording a Master and hoping the uploader transcodes it.
+
 ## Privacy / security
 
 - Source selection always happens through Chrome's permission picker.
@@ -108,15 +137,15 @@ For long 4K sessions:
 
 ## Automated gates
 
-`test/recorder-core.test.mjs` verifies deterministic policy logic:
+`test/recorder-core.test.mjs` verifies deterministic capture policy logic.
 
-- 4K dimensions;
-- FPS constraints;
-- MIME fallback;
-- bitrate bounds;
-- real-resolution labeling;
-- deterministic filenames and formatting.
+`test/social-profile.test.mjs` verifies:
+
+- strict H.264/AAC Social MIME detection;
+- 1080p30 Social/X Free profile contract;
+- X 140-second / 512 MB / 40 FPS / 25 Mbps limits;
+- compatibility pass/fail classification.
 
 `scripts/verify-recorder.mjs` verifies the extension contract and rejects regressions such as a network upload path.
 
-The Chromium extension E2E opens Capture Studio from the real Control Center and runs a synthetic `canvas.captureStream()` through a real Chromium `MediaRecorder`. The OS screen picker itself is intentionally not automated in CI; production source-picker behavior remains controlled by Chrome.
+`test/recorder-browser-e2e.mjs` launches the unpacked extension in Chromium and checks the Social Ready locks plus real `MediaRecorder` recording when the Chromium build exposes the required H.264/AAC MP4 MIME.
