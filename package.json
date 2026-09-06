@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "generate-icons": "node scripts/generate-icons.mjs",
-    "test": "node test/tabflow.test.mjs && node test/memory-core.test.mjs && node test/memory-binding-identity.test.mjs && node test/context-compiler.test.mjs && node test/continuity.test.mjs && node test/runtime-policy.test.mjs && node test/runtime-protection.test.mjs && node test/workspace-layout.test.mjs && node test/workspace-frame-policy.test.mjs && node test/workspace-diagnostics.test.mjs && node test/workspace-sidepanel-policy.test.mjs && node test/recorder-core.test.mjs",
+    "test": "node test/tabflow.test.mjs && node test/memory-core.test.mjs && node test/memory-binding-identity.test.mjs && node test/context-compiler.test.mjs && node test/continuity.test.mjs && node test/runtime-policy.test.mjs && node test/runtime-protection.test.mjs && node test/workspace-layout.test.mjs && node test/workspace-frame-policy.test.mjs && node test/workspace-diagnostics.test.mjs && node test/workspace-sidepanel-policy.test.mjs && node test/recorder-core.test.mjs && node test/social-profile.test.mjs",
     "verify": "node scripts/verify.mjs && node scripts/verify-memory.mjs && node scripts/verify-frame-memory.mjs && node scripts/verify-submit-safety.mjs && node scripts/verify-workspace-diagnostics.mjs && node scripts/verify-react-safety.mjs && node scripts/verify-overlay-ux.mjs && node scripts/verify-sidepanel-control.mjs && node scripts/verify-runtime.mjs && node scripts/verify-workspace.mjs && node scripts/verify-recorder.mjs",
     "quality": "npm run test && npm run verify",
     "browser:e2e": "node test/browser-e2e.mjs && node test/workspace-sidepanel-browser-e2e.mjs && node test/recorder-browser-e2e.mjs"
