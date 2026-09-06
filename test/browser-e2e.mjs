@@ -249,6 +249,17 @@ async function extensionRpc(page, type, payload) {
   }), { type, payload });
 }
 
+async function waitForFile(page, projectId, path, predicate, { timeout = 15_000, interval = 150 } = {}) {
+  const deadline = Date.now() + timeout;
+  let last = null;
+  while (Date.now() < deadline) {
+    last = await extensionRpc(page, 'GET_FILE', { projectId, path });
+    if (predicate(last)) return last;
+    await new Promise(resolve => setTimeout(resolve, interval));
+  }
+  throw new Error(`Timed out waiting for VFS convergence: ${path}; last=${JSON.stringify(last)}`);
+}
+
 async function getPaneByTitle(page, title) {
   const pane = page.locator('.chat-pane').filter({
     has: page.locator('.pane-title', { hasText: title })
@@ -365,9 +376,14 @@ async function main() {
     const host = document.getElementById('tabflow-memory-status-host');
     return (host?.shadowRoot?.getElementById('text')?.textContent || '').includes('Browser E2E Project');
   }, null, { timeout: 15_000 });
-  await new Promise(resolve => setTimeout(resolve, 2_200));
 
-  const liveFile = await extensionRpc(control, 'GET_FILE', { projectId: PROJECT_ID, path: FILE_PATH });
+  const liveFile = await waitForFile(
+    control,
+    PROJECT_ID,
+    FILE_PATH,
+    file => Boolean(file?.content?.includes('// LIVE')),
+    { timeout: 15_000 }
+  );
   assert.ok(liveFile?.content?.includes('// LIVE'), 'live VFS file is ingested before archive test');
 
   const tokenBefore = await paneB.getAttribute('data-tabflow-document-token');
