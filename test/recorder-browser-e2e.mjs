@@ -36,6 +36,7 @@ async function installSyntheticDisplayCapture(page) {
       ctx.fillText(`TabFlow Recorder E2E ${frame}`, 40, 70);
     };
     paint();
+    if (window.__tabflowRecorderPaint) clearInterval(window.__tabflowRecorderPaint);
     window.__tabflowRecorderPaint = setInterval(paint, 33);
     window.__tabflowRecorderCanvas = source;
 
@@ -44,6 +45,11 @@ async function installSyntheticDisplayCapture(page) {
       value: async () => source.captureStream(30)
     });
   });
+}
+
+async function stopAndWait(page) {
+  await page.locator('#btn-stop').click();
+  await page.waitForFunction(() => document.getElementById('recorder-state-pill')?.textContent === 'Đã xong', null, { timeout: 20_000 });
 }
 
 try {
@@ -66,8 +72,37 @@ try {
   await page.waitForFunction(() => document.getElementById('codec-health')?.textContent !== 'Đang kiểm tra');
 
   assert.equal(await page.locator('#quality-select').inputValue(), '4k', 'real 4K target is the default');
+  assert.equal(await page.locator('#publish-profile-select').inputValue(), 'master', 'Master remains the default capture profile');
   assert.equal(await page.locator('#btn-screenshot').isEnabled(), true, 'standalone screenshot is available before recording');
   assert.match(await page.locator('#status-message').textContent(), /không upload video/i, 'recorder advertises local-only data flow');
+
+  // Social Ready must deterministically lock output to the conservative cross-platform profile.
+  await page.locator('#publish-profile-select').selectOption('social');
+  await page.waitForFunction(() => document.getElementById('quality-select')?.value === '1080p');
+  assert.equal(await page.locator('#quality-select').inputValue(), '1080p', 'Social Ready caps capture at 1080p');
+  assert.equal(await page.locator('#fps-select').inputValue(), '30', 'Social Ready caps capture at 30 FPS');
+  assert.equal(await page.locator('#format-select').inputValue(), 'mp4', 'Social Ready requires MP4');
+  assert.equal(await page.locator('#quality-select').isDisabled(), true, 'Social Ready locks resolution to its compatibility contract');
+  assert.equal(await page.locator('#fps-select').isDisabled(), true, 'Social Ready locks FPS to its compatibility contract');
+  assert.equal(await page.locator('#format-select').isDisabled(), true, 'Social Ready locks container to MP4');
+
+  const socialCodecAvailable = await page.evaluate(() =>
+    MediaRecorder.isTypeSupported('video/mp4;codecs=avc1.42E01E,mp4a.40.2') ||
+    MediaRecorder.isTypeSupported('video/mp4;codecs=avc1.4D401F,mp4a.40.2')
+  );
+
+  if (socialCodecAvailable) {
+    await installSyntheticDisplayCapture(page);
+    await page.locator('#btn-start').click();
+    await page.waitForFunction(() => document.getElementById('recorder-state-pill')?.textContent === 'Đang quay', null, { timeout: 15_000 });
+    await page.waitForTimeout(900);
+    await stopAndWait(page);
+    assert.match(await page.locator('#result-meta').textContent(), /MP4/i, 'Social Ready records an MP4 container when strict social codec is available');
+    assert.match(await page.locator('#social-compatibility').textContent(), /Social Ready|X non-Premium/i, 'Social Ready reports upload compatibility after recording');
+  }
+
+  await page.locator('#publish-profile-select').selectOption('master');
+  await page.waitForFunction(() => document.getElementById('quality-select')?.disabled === false);
 
   await installSyntheticDisplayCapture(page);
 
@@ -93,8 +128,7 @@ try {
   await page.waitForFunction(() => document.getElementById('recorder-state-pill')?.textContent === 'Đang quay');
   await page.waitForTimeout(850);
 
-  await page.locator('#btn-stop').click();
-  await page.waitForFunction(() => document.getElementById('recorder-state-pill')?.textContent === 'Đã xong', null, { timeout: 20_000 });
+  await stopAndWait(page);
   assert.equal(await page.locator('#result-card').isVisible(), true, 'completed recording exposes result card');
   assert.match(await page.locator('#result-meta').textContent(), /WEBM/i, 'selected WebM container is reported');
   assert.match(await page.locator('#result-meta').textContent(), /1280×720/, 'actual source resolution is reported instead of fake 4K');
@@ -109,7 +143,7 @@ try {
   assert.match(result.resultName, /\.webm$/i, 'completed recording has a WebM filename');
   assert.doesNotMatch(result.resultMeta, /^0 B/, 'completed recording contains bytes');
 
-  console.log('✅ Capture Studio record/pause/resume/stop + standalone screenshot Chromium E2E passed');
+  console.log('✅ Capture Studio Social Ready + record/pause/resume/stop + standalone screenshot Chromium E2E passed');
 } finally {
   if (context) {
     for (const page of context.pages()) {
