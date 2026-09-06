@@ -271,10 +271,9 @@ if (typeof chrome !== 'undefined' && chrome.runtime) {
     const stored = await chrome.storage.local.get(['settings', 'stats']);
     if (!stored.settings) await chrome.storage.local.set({ settings: DEFAULT_SETTINGS });
 
-    const cleanStats = sanitizeStats(stored.stats || DEFAULT_STATS);
-    if (!stored.stats || 'estimatedMbSaved' in stored.stats) {
-      await chrome.storage.local.set({ stats: cleanStats });
-    }
+    // Normalize persisted statistics on every install/update so legacy fields
+    // disappear without keeping deprecated metrics in the runtime contract.
+    await chrome.storage.local.set({ stats: sanitizeStats(stored.stats || DEFAULT_STATS) });
 
     await chrome.alarms.create('tabflow-auto-check', { periodInMinutes: 1 });
     await updateBadge();
