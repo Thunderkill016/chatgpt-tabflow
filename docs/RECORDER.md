@@ -139,15 +139,10 @@ For a file intended for X/Facebook, prefer **Social Ready** rather than recordin
 
 `test/recorder-core.test.mjs` verifies deterministic capture policy logic.
 
-`test/social-profile.test.mjs` verifies:
-
-- strict H.264/AAC Social MIME detection;
-- 1080p30 Social/X Free profile contract;
-- X 140-second / 512 MB / 40 FPS / 25 Mbps limits;
-- compatibility pass/fail classification.
+`test/social-profile.test.mjs` verifies strict H.264/AAC MIME detection, the 1080p30 Social/X Free profile, and X's 140-second / 512 MB / 40 FPS / 25 Mbps envelope.
 
 `scripts/verify-recorder.mjs` verifies the extension contract and rejects regressions such as a network upload path.
 
 `test/recorder-browser-e2e.mjs` launches the unpacked extension in Chromium and checks the Social Ready locks plus real `MediaRecorder` recording when the Chromium build exposes the required H.264/AAC MP4 MIME.
 
-The whole-extension browser harness also waits for observable VFS convergence instead of sleeping for a fixed interval, so unrelated CI load does not make the recorder/social gate look broken. The Social Ready wave passed both `quality` and unpacked-extension Chromium E2E before being handed off for production use.
+The whole-extension browser harness waits for observable VFS convergence instead of sleeping for a fixed interval, so unrelated CI load does not make the recorder/social gate look broken.
