@@ -432,6 +432,10 @@ function installEvents() {
   $('btn-refresh')?.addEventListener('click', refreshAll);
   $('btn-options')?.addEventListener('click', () => chrome.runtime.openOptionsPage());
   $('btn-open-coding-hub')?.addEventListener('click', () => send('OPEN_WORKSPACE'));
+  $('btn-open-recorder')?.addEventListener('click', () => chrome.tabs.create({
+    url: chrome.runtime.getURL('recorder/index.html'),
+    active: true
+  }));
   $('control-open-memory')?.addEventListener('click', () => nav.memory?.click());
   $('btn-turbo-freeze')?.addEventListener('click', freezeIdleChats);
   $('btn-group-tabs')?.addEventListener('click', async () => {
