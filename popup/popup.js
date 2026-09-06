@@ -1,85 +1,100 @@
 /**
- * ChatGPT TabFlow - Quick Popup Controller
+ * TabFlow v3 quick launcher.
+ * Keeps the popup intentionally small: real counts + entry points only.
  */
 
 (() => {
   'use strict';
 
-  const tabCountEl = document.getElementById('popup-tab-count');
-  const ramSavedEl = document.getElementById('popup-ram-saved');
-  const btnHub = document.getElementById('btn-popup-hub');
-  const btnFreeze = document.getElementById('btn-popup-freeze');
-  const btnSidepanel = document.getElementById('btn-popup-sidepanel');
-  const btnGroup = document.getElementById('btn-popup-group');
-  const linkOptions = document.getElementById('link-options');
-  const toastEl = document.getElementById('popup-toast');
+  const $ = id => document.getElementById(id);
+  const tabCountEl = $('popup-tab-count');
+  const generatingCountEl = $('popup-generating-count');
+  const sleepingCountEl = $('popup-sleeping-count');
+  const versionEl = $('popup-version');
+  const toastEl = $('popup-toast');
+  let toastTimer = null;
 
-  function showToast(msg) {
-    toastEl.textContent = msg;
-    toastEl.style.display = 'block';
-    setTimeout(() => {
-      toastEl.style.display = 'none';
-    }, 2000);
+  function showToast(message, tone = 'info') {
+    if (!toastEl) return;
+    if (toastTimer) clearTimeout(toastTimer);
+    toastEl.textContent = message;
+    toastEl.dataset.tone = tone;
+    toastEl.classList.add('show');
+    toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2400);
   }
 
-  function formatMb(mb) {
-    if (mb >= 1024) {
-      return `${(mb / 1024).toFixed(1)} GB`;
-    }
-    return `${Math.round(mb)} MB`;
+  async function send(type, payload = {}) {
+    return chrome.runtime.sendMessage({ type, ...payload });
   }
 
   async function loadPopupData() {
     try {
-      const res = await chrome.runtime.sendMessage({ type: 'GET_TABS_DATA' });
-      if (res && res.success) {
-        tabCountEl.textContent = res.tabs.length;
-        const savedMb = res.stats?.estimatedMbSaved || 0;
-        ramSavedEl.textContent = formatMb(savedMb);
-      }
-    } catch (err) {
-      console.warn('[TabFlow Popup] Load error:', err);
+      const [tabsData, runtimeData] = await Promise.all([
+        send('GET_TABS_DATA'),
+        send('RUNTIME_GET_STATE').catch(() => null)
+      ]);
+      const tabs = tabsData?.success ? tabsData.tabs || [] : [];
+      const snapshot = runtimeData?.success ? runtimeData.snapshot || {} : {};
+      tabCountEl.textContent = String(tabs.length);
+      sleepingCountEl.textContent = String(tabs.filter(tab => tab.discarded).length);
+      generatingCountEl.textContent = String(Number(snapshot.generatingCount || 0));
+    } catch (error) {
+      console.warn('[TabFlow Popup] summary unavailable:', error?.message || error);
     }
   }
 
-  btnFreeze.addEventListener('click', async () => {
-    btnFreeze.disabled = true;
-    btnFreeze.textContent = 'Đang dọn RAM...';
-    try {
-      const res = await chrome.runtime.sendMessage({ type: 'DISCARD_ALL_BACKGROUND' });
-      if (res && res.success) {
-        showToast(`⚡ Đã dọn ${res.discardedCount} tab, tiết kiệm ${formatMb(res.freedMb)} RAM!`);
-      }
-    } finally {
-      btnFreeze.disabled = false;
-      btnFreeze.innerHTML = '<span>⚡</span> Turbo Freeze — Dọn RAM Ngay';
-      await loadPopupData();
-    }
+  $('btn-popup-hub').addEventListener('click', async () => {
+    await send('OPEN_WORKSPACE');
+    window.close();
   });
 
-  btnSidepanel.addEventListener('click', async () => {
+  $('btn-popup-sidepanel').addEventListener('click', async () => {
     try {
       const currentWindow = await chrome.windows.getCurrent();
       await chrome.sidePanel.open({ windowId: currentWindow.id });
       window.close();
-    } catch (err) {
-      console.error('[TabFlow Popup] Open SidePanel failed:', err);
+    } catch (error) {
+      showToast(`Không mở được Control Center: ${error?.message || error}`, 'error');
     }
   });
 
-  btnHub.addEventListener('click', async () => {
-    await chrome.runtime.sendMessage({ type: 'OPEN_WORKSPACE' });
+  $('btn-popup-recorder').addEventListener('click', async () => {
+    await chrome.tabs.create({ url: chrome.runtime.getURL('recorder/index.html') });
     window.close();
   });
 
-  btnGroup.addEventListener('click', async () => {
-    await chrome.runtime.sendMessage({ type: 'GROUP_TABS' });
-    showToast('Đã gom các tab ChatGPT vào Tab Group!');
+  $('btn-popup-freeze').addEventListener('click', async event => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      const result = await send('DISCARD_ALL_BACKGROUND');
+      if (!result?.success) throw new Error(result?.error || 'Không thể tối ưu chat nền');
+      if (result.discardedCount > 0) {
+        showToast(`Đã cho ${result.discardedCount} chat nhàn rỗi ngủ.`, 'success');
+      } else if (result.protectedCount > 0) {
+        showToast(`${result.protectedCount} chat đang làm việc nên được giữ nguyên.`, 'warning');
+      } else {
+        showToast('Không có chat nền nào cần ngủ.');
+      }
+      await loadPopupData();
+    } catch (error) {
+      showToast(error?.message || String(error), 'error');
+    } finally {
+      button.disabled = false;
+    }
   });
 
-  linkOptions.addEventListener('click', () => {
-    chrome.runtime.openOptionsPage();
+  $('btn-popup-group').addEventListener('click', async () => {
+    try {
+      await send('GROUP_TABS');
+      showToast('Đã gom các chat vào Tab Group.', 'success');
+    } catch (error) {
+      showToast(`Không gom được tab: ${error?.message || error}`, 'error');
+    }
   });
 
+  $('link-options').addEventListener('click', () => chrome.runtime.openOptionsPage());
+
+  versionEl.textContent = `v${chrome.runtime.getManifest().version}`;
   loadPopupData();
 })();
