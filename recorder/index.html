@@ -29,7 +29,7 @@
           <div id="preview-empty" class="preview-empty">
             <div class="preview-empty-icon">◉</div>
             <strong>Chưa chọn nguồn quay</strong>
-            <span>Bấm “Bắt đầu quay”, rồi chọn màn hình, cửa sổ hoặc tab trong hộp thoại của Chrome.</span>
+            <span>Bấm “Bắt đầu quay” để quay, hoặc “Chụp PNG” để chụp riêng một màn hình/cửa sổ/tab.</span>
           </div>
           <div class="recording-hud">
             <span id="recording-dot" class="recording-dot"></span>
@@ -51,7 +51,7 @@
           <button id="btn-start" class="btn primary" type="button">● Bắt đầu quay</button>
           <button id="btn-pause" class="btn" type="button" disabled>Ⅱ Tạm dừng</button>
           <button id="btn-stop" class="btn danger" type="button" disabled>■ Dừng</button>
-          <button id="btn-screenshot" class="btn" type="button" disabled>▣ Chụp PNG</button>
+          <button id="btn-screenshot" class="btn" type="button">▣ Chụp PNG</button>
         </div>
       </section>
 
@@ -160,5 +160,6 @@
   </div>
   <canvas id="capture-canvas" hidden></canvas>
   <script type="module" src="recorder.js"></script>
+  <script type="module" src="screenshot-controller.js"></script>
 </body>
 </html>
