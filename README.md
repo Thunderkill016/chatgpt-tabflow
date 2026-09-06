@@ -1,113 +1,199 @@
-# ⚡ ChatGPT TabFlow — Trình Quản Lý & Tối Ưu Đa Tab ChatGPT (Chống Lag Triệt Để)
+# ⚡ ChatGPT TabFlow v3.2
 
-Extension chuẩn **Manifest V3** dành riêng cho người dùng mở nhiều tab ChatGPT trên Google Chrome. Giải quyết triệt để 3 vấn đề lớn nhất:
-1. **Ngốn RAM**: Giải phóng 80–90% bộ nhớ của các tab chạy ngầm bằng cơ chế **Native Tab Discarding**.
-2. **Lag khi gõ prompt & cuộn chat dài**: Ảo hóa DOM (`content-visibility: auto`) và kích hoạt **Typing Latency Shield**.
-3. **Loạn tab**: Tích hợp **Side Panel Workspace** (`Alt+C`), tự động gom nhóm tab và lưu phiên làm việc (Session Stash).
+TabFlow is a local-first Chrome extension for people who work with many ChatGPT conversations as one project.
 
----
+The v3.2 release focuses on four product surfaces:
 
-## 🎯 So Sánh Hiệu Năng Trước & Sau Khi Dùng
+- **Unified Workspace** — show the ChatGPT conversations you already have open in one workbench.
+- **Project Memory + local RAG** — index project constraints, decisions, code evidence and conversation context locally, then retrieve relevant context for another chat in the same project.
+- **Adaptive Runtime** — protect productive chats and hibernate only background chats that are actually safe to discard.
+- **Capture Studio** — record or screenshot a screen/window/tab locally, including 4K targets when the selected source really provides 4K.
 
-| Tiêu chí | Khi chưa dùng TabFlow | Khi có ChatGPT TabFlow |
-| :--- | :--- | :--- |
-| **RAM tiêu thụ (10 tab)** | 4.5 GB – 7.0 GB | **400 MB – 800 MB** *(giảm ~85%)* |
-| **Độ trễ gõ prompt (chat dài)** | Giật lag 500ms – 2000ms | **0ms (gõ mượt mà 60 FPS)** |
-| **Số lượng DOM node render** | 10.000+ nodes | **Chỉ render ~30 nodes trong viewport** |
-| **Tìm & chuyển tab** | Mất công mò giữa hàng chục tab | **1 click trên Side Panel hoặc phím tắt `Alt+C`** |
-| **Đóng mở tab an toàn** | Sợ mất link cuộc trò chuyện | **Lưu phiên (Stash) & khôi phục chỉ 1 nút bấm** |
+TabFlow is not a proxy service and does not require a TabFlow cloud account.
 
----
+## Requirements
 
-## 🚀 Hướng Dẫn Cài Đặt Vào Google Chrome (10 Giây)
+- Google Chrome **116 or newer**.
+- Manifest V3.
+- A signed-in ChatGPT session for normal production use.
 
-Vì đây là sản phẩm trực tiếp từ mã nguồn, bạn không cần đợi tải từ store mà có thể nạp ngay vào Chrome:
+Chrome 116 is the minimum because TabFlow uses the Side Panel API including programmatic `sidePanel.open()`.
 
-1. Mở trình duyệt **Google Chrome**.
-2. Truy cập vào đường dẫn: `chrome://extensions/`
-3. Bật công tắc **Chế độ dành cho nhà phát triển (Developer mode)** ở góc trên cùng bên phải.
-4. Bấm vào nút **Tải tiện ích đã giải nén (Load unpacked)** ở góc trên bên trái.
-5. Chọn thư mục dự án:
-   ```text
-   /home/thunder/Code/chatgpt-tabflow
-   ```
-6. **Hoàn tất!** Icon tia sét xanh **ChatGPT TabFlow** sẽ xuất hiện trên thanh công cụ của Chrome. Hãy ghim (Pin) icon này để tiện sử dụng.
+## Install from source
 
----
+```bash
+cd ~/Code/chatgpt-tabflow
+git switch feat/v3-cognitive-memory-wave1
+```
 
-## 🛠️ Các Tính Năng Nổi Bật
+Then open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select this repository directory.
 
-### 1. ⚡ Turbo Instant Loader (Fetch Proxy — Load Chat Dài Trong 0.3s)
-- **Cơ chế đỉnh cao**: Tiêm script tầng Main World chặn và cắt tỉa cây hội thoại JSON từ `/backend-api/conversation/<id>` trước khi nạp cho React.
-- **Hiệu quả**: Thay vì ép React phải nhồi 50+ code block và 50.000 DOM node khiến màn hình bị trắng xóa hoặc đơ 30 giây, tiện ích chỉ giữ lại 20 tin nhắn hoạt động gần nhất. Đoạn chat dài hàng trăm tin nhắn mở lên **trong 0.3 giây**, không bao giờ bị đơ!
+After pulling an update, use **Reload** on the extension card. Existing ChatGPT tabs may also need one page reload when content scripts or the manifest changed.
 
-### 2. 🔄 Cầu Nối Trí Nhớ & Smart Rollover (Chống "Mất Trí Nhớ" Khi Đổi Chat)
-- **Giải quyết triệt để vấn đề mất ngữ cảnh**: Khi chat quá dài hoặc ChatGPT báo *"Conversation too long"*:
-  - Nút **`🔄 Tiếp nối Chat mới`** trên thanh HUD tự động quét toàn bộ mã nguồn, các file đã viết, quy chuẩn và tác vụ dở dang.
-  - Tự động mở một tab Chat mới và nạp sẵn bản **Prompt Mồi Kỹ Thuật (Primer)** vào ô chat.
-  - ChatGPT ở tab mới hiểu ngay 100% ngữ cảnh của tab cũ trong 1 giây mà bạn không tốn công giải thích lại!
-- **Thước đo Context Capacity Meter**: Đo % dung lượng token trên góc màn hình (`🟢 20%` -> `🟡 65%` -> `🔴 85% Cảnh báo đầy`).
+## Main workflow
 
-### 3. 📦 Ngăn Kéo Code Vault (Gom Toàn Bộ Code Vào 1 Chỗ)
-- Nút **`📦 Code Vault`** góc phải mở ra ngăn kéo trượt chứa tất cả các khối code (`.py`, `.js`, `.sql`, `.html`...) đã sinh trong cuộc trò chuyện.
-- Không còn phải cuộn chuột mỏi tay tìm lại code cũ!
-- Nút **Copy** và **Tải file về máy** trực tiếp chỉ với 1 click.
+### 1. Control Center
 
-### 4. 📁 Két Sắt Dự Án Dùng Chung (Shared Project Vault)
-- Trong Side Panel (`Alt + C`), chuyển sang tab **"📁 Dự Án"** để lưu hồ sơ các dự án của bạn (`OpenPronounce`, `MoneyFlow`...).
-- Mở bất kỳ tab chat nào, bấm **"💉 Bơm ngữ cảnh vào Chat"** để đồng bộ ngay lập tức Tech Stack và Quy chuẩn kỹ thuật sang chat đó!
+Open the extension Side Panel with the toolbar popup or `Alt+C`.
 
-### 5. 🖥️ Multi-Chat Coding Hub (Bảng Điều Khiển Code Đa Khung Chat Song Song)
-- Mở song song 2 đến 4 phiên ChatGPT (Frontend bên trái, Backend bên phải, Database ở giữa).
-- Tích hợp Code Scratchpad đa file có thụt lề Tab, số dòng, tải file.
-- Nút **"🪟 Tile Windows"** chia đôi 2 cửa sổ Chrome thật 50/50 trên màn hình.
+The Control Center contains:
 
-### 6. 💤 Turbo Freeze (Cứu Tinh Cho Bộ Nhớ RAM)
-- Tự động đưa các tab ChatGPT chạy ngầm vào chế độ ngủ đông sau 5 phút qua `chrome.tabs.discard()`.
-- Giải phóng 85-90% RAM nhưng vẫn giữ nguyên tab và URL trên thanh duyệt web.
-- **Typing Latency Shield**: Khi bạn đặt con trỏ chuột vào khung nhập văn bản và gõ phím, TabFlow sẽ lập tức tạm khóa các hiệu ứng CSS chuyển động và observer nền. Mọi ký tự bạn gõ sẽ xuất hiện tức thì, không còn hiện tượng delay khó chịu.
-- **Tắt Blur GPU**: Loại bỏ các hiệu ứng `backdrop-filter` mờ ảo ngốn tài nguyên card đồ họa.
+- open ChatGPT conversations and their live runtime state;
+- current Project Memory binding;
+- Memory/RAG inspectors;
+- Runtime automation controls;
+- saved sessions;
+- Project Vault;
+- entry points to Unified Workspace and Capture Studio.
 
-### 3. 🖥️ Side Panel Workspace (`Alt+C`)
-- Bấm tổ hợp phím **`Alt+C`** hoặc bấm nút **"Mở Side Panel Workspace"** trong popup.
-- Một thanh điều khiển hiện đại (Dark Theme) sẽ mở ra ngay cạnh phải màn hình:
-  - Xem danh sách toàn bộ các tab ChatGPT kèm trạng thái: `🟢 Đang dùng` hoặc `💤 Đang ngủ`.
-  - Tìm kiếm nhanh tên đoạn hội thoại.
-  - Chuyển tab nhanh chóng chỉ với 1 click.
-  - Nút **"Turbo Freeze"** để dọn dẹp RAM của toàn bộ tab nền trong 1 nốt nhạc.
+### 2. Unified Workspace
 
-### 4. 💾 Session Stash & Restore (Cất Tab Khi Nghỉ)
-- Nếu bạn đang mở 15 tab nghiên cứu dự án nhưng muốn đóng trình duyệt để máy nhẹ nhàng:
-  - Bấm nút **"Lưu phiên (Stash)"**.
-  - Đặt tên cho phiên (ví dụ: *Dự án Deep Learning 05/09*).
-  - Toàn bộ link và tiêu đề của 15 tab sẽ được lưu an toàn vào máy, và các tab sẽ được đóng lại để giải phóng **100% RAM**.
-  - Khi muốn làm việc tiếp, chuyển sang tab **"Phiên Đã Lưu"** và bấm **"Khôi phục"**, tất cả 15 tab sẽ được mở lại nguyên vẹn!
+Unified Workspace imports the ChatGPT tabs that are currently open. It is not limited to three conversations.
 
-### 5. 📁 Gom Nhóm Tab (Chrome Tab Group)
-- Bấm nút **"Gom Tab Group"**, TabFlow sẽ tự động gom mọi tab ChatGPT đang mở vào một nhóm tab màu tím chuyên nghiệp mang tên **`🤖 ChatGPT Workspace`**, giúp thanh tab của bạn luôn ngăn nắp và gọn gàng.
+Workspace behavior includes:
 
----
+- adaptive layout for 1, 2, 3, 5, 10 or more open chats;
+- primary-pane / spotlight layouts;
+- resizable split view;
+- Focus mode without intentionally destroying the iframe browsing context;
+- Sync without intentionally remounting unchanged panes;
+- document-token diagnostics for unexpected pane remounts;
+- project inheritance for new Workspace chats;
+- scoped session DNR rules so the frame-policy exception is limited to the Workspace tab rather than every ChatGPT tab.
 
-## ⌨️ Phím Tắt Tiện Lợi (Shortcuts)
+The Side Panel is disabled specifically on the Workspace tab so it does not consume Workspace width.
 
-| Phím tắt | Chức năng |
-| :--- | :--- |
-| **`Alt + C`** | Mở / Đóng nhanh thanh **Side Panel Workspace** |
-| **`Alt + F`** | Kích hoạt **Turbo Freeze** đóng băng toàn bộ tab ChatGPT nền |
+### 3. Local Project Memory
 
----
+TabFlow stores project memory in extension-owned IndexedDB (`tabflow_project_memory`). The current memory system includes:
 
-## 🧪 Cách Kiểm Tra Thực Tế Độ Tiết Kiệm RAM
+- projects;
+- conversations;
+- virtual project files;
+- chunks for local retrieval;
+- decisions;
+- graph edges and metadata.
 
-1. Mở khoảng 5 đến 10 tab ChatGPT trên Chrome.
-2. Nhấn tổ hợp phím **`Shift + Esc`** để mở **Task Manager của Chrome**.
-3. Quan sát cột **Memory footprint** của các tab ChatGPT (thường từ 400MB đến 800MB mỗi tab).
-4. Bấm vào icon TabFlow hoặc nhấn **`Alt + F`** để chạy **Turbo Freeze**.
-5. Nhìn lại Task Manager của Chrome: Các tab nền sẽ biến mất khỏi danh sách tiến trình nặng hoặc giảm xuống chỉ còn khoảng ~20-30MB. Tổng dung lượng RAM hệ thống giải phóng có thể lên tới vài Gigabyte!
+The Context Compiler allocates explicit context budget across:
 
----
+```text
+authority → continuity → profile → structural → retrieval
+```
 
-## 🛡️ Bảo Mật & Quyền Riêng Tư (Privacy First)
+User constraints and accepted project rules are treated as higher-authority context than retrieved assistant prose.
 
-- **100% Local**: Tiện ích chạy hoàn toàn trên máy tính của bạn, không gửi bất kỳ dữ liệu trò chuyện, cookie hay thông tin cá nhân nào ra máy chủ bên ngoài.
-- **Không dùng `eval()`**: Tuân thủ nghiêm ngặt tiêu chuẩn bảo mật Chrome Extension Manifest V3.
+Historical archive observations are guarded so older evidence cannot overwrite a newer live VFS observation.
+
+### 4. Adaptive Runtime
+
+Runtime state distinguishes productive activity such as typing/generating from idle background work.
+
+Important safety behavior:
+
+- typing/generating chats are protected from discard;
+- destructive discard performs a live renderer probe first;
+- unavailable or malformed probe data fails safe: the tab is not discarded;
+- generation concurrency is a ceiling and can be reduced under memory pressure;
+- auto-sleep uses Chrome tab discard rather than pretending to know exact per-tab RAM usage.
+
+TabFlow does **not** claim a fixed number of megabytes saved per tab. Actual browser memory usage depends on Chrome, the conversation, extensions, GPU state and the machine.
+
+## Capture Studio
+
+Open **Capture Studio** from the toolbar popup or Control Center.
+
+Features:
+
+- screen / window / tab picker through `getDisplayMedia()`;
+- 4K UHD, 1440p, 1080p and Native targets;
+- 30 or 60 FPS master capture targets;
+- MP4 when the current Chrome MediaRecorder implementation supports the requested codec/container;
+- WebM fallback;
+- source/system audio when Chrome exposes it;
+- optional microphone mix;
+- pause / resume / stop;
+- PNG screenshots;
+- direct-to-file chunk writing for long recordings when File System Access is available;
+- Chrome Downloads fallback and recent-recording actions;
+- no Capture Studio network-upload path.
+
+### Master vs Social Ready
+
+- **Master** keeps quality controls such as 4K/60.
+- **Social Ready** targets 1080p30 MP4 H.264/AAC-LC when the browser exposes that MediaRecorder combination.
+- **X Free** uses the Social Ready target and automatically stops before the non-Premium 140-second limit.
+
+TabFlow reports the **actual captured resolution**. A 1920×1080 source is not relabeled or upscaled as true 4K.
+
+## Privacy and security model
+
+TabFlow is designed as a local-first extension:
+
+- project memory stays in extension-owned browser storage;
+- Capture Studio does not upload recordings;
+- no `eval()` / `new Function()` in the production extension path;
+- automatic retry is limited to safe GET/HEAD requests;
+- mutating conversation POST requests are not blindly replayed;
+- ChatGPT iframe header overrides are installed as session DNR rules scoped to the Workspace tab and `sub_frame` resources;
+- the legacy global static CSP/X-Frame-Options stripping ruleset is removed.
+
+Host permissions are limited to:
+
+```text
+https://chatgpt.com/*
+https://chat.openai.com/*
+```
+
+## Permissions
+
+| Permission | Why TabFlow uses it |
+| --- | --- |
+| `tabs` | list, activate, create, close and safely discard ChatGPT tabs |
+| `storage` | settings, sessions, project bindings and runtime state |
+| `alarms` | periodic idle/sleep checks |
+| `sidePanel` | Control Center |
+| `tabGroups` | optional ChatGPT Tab Group organization |
+| `declarativeNetRequest` | session-scoped Workspace frame policy |
+| `offscreen` | local memory worker host |
+| `unlimitedStorage` | larger local Project Memory corpora |
+| `system.memory` | coarse system memory-pressure signal, not per-tab RAM accounting |
+| `downloads` | video and screenshot export / recent download actions |
+
+## Keyboard shortcuts
+
+| Shortcut | Action |
+| --- | --- |
+| `Alt+C` | Open Control Center |
+| `Alt+F` | Ask Runtime to hibernate safe background ChatGPT tabs |
+
+Workspace also supports pane focus and splitter keyboard controls documented by the in-product UI.
+
+## Tests
+
+Deterministic checks:
+
+```bash
+npm run quality
+```
+
+Real unpacked-extension Chromium tests:
+
+```bash
+npm run browser:e2e
+```
+
+The Chromium harness verifies the actual MV3 extension path, including Workspace frame policy, cross-pane local RAG, submit safety, runtime discard protection, Side Panel policy and Capture Studio record/pause/resume/stop.
+
+A production canary with an authenticated ChatGPT session is still useful for detecting upstream ChatGPT DOM/API drift that a deterministic fixture cannot predict.
+
+See `docs/TESTING.md`, `docs/RECORDER.md`, `docs/PRODUCT-ARCHITECTURE-ADOPTIONS.md` and `docs/RESEARCH-ADOPTIONS.md` for engineering details.
+
+## Release policy
+
+`main` should represent a usable release baseline. New architecture work belongs on a feature branch and must pass both static/unit quality gates and Chromium extension E2E before merge.
+
+Current release line: **v3.2.0**.
+
+## License
+
+MIT. Upstream repositories are used as design/research references according to the adoption notes in `docs/`; TabFlow does not copy incompatible-license code into the project.
