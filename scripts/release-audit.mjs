@@ -23,6 +23,8 @@ check(manifest.manifest_version === 3, 'Manifest V3');
 check(manifest.version === pkg.version, `manifest/package version agree (${manifest.version})`);
 check(/^3\.2\.\d+$/.test(manifest.version), 'release version is on the 3.2.x line');
 check(Number(manifest.minimum_chrome_version) >= 116, 'minimum Chrome is 116+ for chrome.sidePanel.open()');
+check(pkg.license === 'MIT', 'package metadata declares MIT');
+check(exists('LICENSE') && /MIT License/.test(read('LICENSE')), 'MIT LICENSE file exists');
 
 const requiredPermissions = [
   'tabs', 'storage', 'alarms', 'sidePanel', 'tabGroups',
@@ -83,6 +85,7 @@ check(!/\bfetch\s*\(/.test(recorder), 'Capture Studio has no network upload path
 
 const qualityScript = String(pkg.scripts?.quality || '');
 check(qualityScript.includes('release:audit'), 'npm run quality includes release-readiness audit');
+check(String(pkg.scripts?.['release:package'] || '').includes('package-release.mjs'), 'release package command is wired');
 
 if (failed) process.exitCode = 1;
 else console.log('🏁 Release-readiness audit passed');
