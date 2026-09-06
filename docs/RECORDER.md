@@ -97,7 +97,7 @@ Capture Studio now has three output intents:
 - **Social Ready** — locks the capture to `1080p`, `30 FPS`, and MP4. Before recording it requires an explicit `H.264/AVC + AAC-LC` MediaRecorder MIME instead of silently calling a WebM fallback "social ready".
 - **X Free** — uses the same Social Ready encoding and auto-stops at `2:19`, one second before X's documented 140-second non-Premium limit.
 
-The cross-platform target is deliberately conservative: `1920×1080`, `30 FPS`, H.264/AAC-LC MP4, and roughly 5 Mbps video bitrate. It is intended to avoid the common failure mode where a high-quality local master is outside a social platform's ingest envelope.
+The cross-platform target is deliberately conservative: `1920×1080`, `30 FPS`, H.264/AAC-LC MP4, and roughly 5 Mbps video bitrate. It is intended to avoid the common failure mode where a high-quality local master is outside a social platform's ingest envelope. For Facebook this is a conservative interoperability preset, not a claim that TabFlow can predict every account/product-specific Meta ingest rule.
 
 ### X web limits
 
