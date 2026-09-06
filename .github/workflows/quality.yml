@@ -48,3 +48,23 @@ jobs:
           path: artifacts/browser-e2e
           if-no-files-found: ignore
           retention-days: 7
+
+  release-package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Build release ZIP
+        run: npm run release:package
+      - name: Upload release candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: tabflow-v3.2.0-release-candidate
+          path: dist/tabflow-v3.2.0.zip
+          if-no-files-found: error
+          retention-days: 14
