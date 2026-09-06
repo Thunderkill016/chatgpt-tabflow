@@ -53,6 +53,7 @@ let selectedFileHandle = null;
 let activeFileHandle = null;
 let writerReady = Promise.resolve(null);
 let writeChain = Promise.resolve();
+let directWriteFailure = null;
 let chunks = [];
 let bytesRecorded = 0;
 let activeMime = '';
@@ -249,13 +250,22 @@ function installRecorderEvents(instance) {
     bytesRecorded += event.data.size;
     refreshTimer();
     writeChain = writeChain.then(async () => {
+      if (directWriteFailure) return;
       const writer = await writerReady;
-      if (writer) await writer.write(event.data);
-      else chunks.push(event.data);
-    }).catch(error => {
-      console.error('[TabFlow Recorder] chunk write failed:', error);
-      chunks.push(event.data);
-      setStatus('Ghi trực tiếp gặp lỗi; các chunk tiếp theo được giữ tạm trong RAM.', 'warn');
+      if (writer) {
+        try {
+          await writer.write(event.data);
+        } catch (error) {
+          directWriteFailure = error;
+          console.error('[TabFlow Recorder] direct chunk write failed:', error);
+          setStatus('Lỗi ghi file trực tiếp. TabFlow đang dừng ngay để không báo nhầm một video bị thiếu chunk là hoàn chỉnh.', 'error');
+          queueMicrotask(() => {
+            if (state === 'recording' || state === 'paused') stopRecording('write-error');
+          });
+        }
+      } else {
+        chunks.push(event.data);
+      }
     });
   });
 
@@ -290,6 +300,8 @@ async function startRecording() {
   showDownloadButton.hidden = true;
   chunks = [];
   bytesRecorded = 0;
+  directWriteFailure = null;
+  activeFileHandle = null;
   writeChain = Promise.resolve();
   writerReady = Promise.resolve(null);
 
@@ -324,6 +336,7 @@ async function startRecording() {
 
     preview.srcObject = displayStream;
     preview.controls = false;
+    preview.muted = true;
     previewEmpty.hidden = true;
     await preview.play().catch(() => {});
     updateActualStats();
@@ -347,6 +360,7 @@ async function startRecording() {
         fps: Number(actualSettings.frameRate || fpsSelect.value || 30)
       });
       clearSelectedFile('MP4/WebM fallback đổi container; lưu trực tiếp tắt cho bản ghi này để tránh sai đuôi file.');
+      activeFileHandle = null;
       installRecorderEvents(recorder);
       recorder.start(1000);
     }
@@ -355,7 +369,7 @@ async function startRecording() {
     setState('recording', 'Đang quay');
     startTimer();
     updateActualStats();
-    setStatus(activeFileHandle || selectedFileHandle
+    setStatus(selectedFileHandle
       ? 'Đang quay; chunk video được ghi theo luồng để giảm áp lực RAM.'
       : 'Đang quay trong bộ nhớ tạm. Với 4K dài, lần sau nên chọn file lưu trực tiếp.',
     selectedFileHandle ? 'ok' : 'warn');
@@ -395,7 +409,13 @@ function stopRecording(reason = 'user') {
   }
   lastDurationMs = elapsedMs();
   setState('finalizing', 'Đang hoàn tất…');
-  setStatus(reason === 'source-ended' ? 'Nguồn share đã dừng; đang hoàn tất file…' : 'Đang ghi nốt chunk cuối và đóng file…');
+  if (reason === 'source-ended') {
+    setStatus('Nguồn share đã dừng; đang hoàn tất file…');
+  } else if (reason === 'write-error') {
+    setStatus('Đang đóng recorder sau lỗi ghi trực tiếp để bảo vệ tính toàn vẹn dữ liệu…', 'error');
+  } else {
+    setStatus('Đang ghi nốt chunk cuối và đóng file…');
+  }
   stopTimer();
   try {
     recorder.stop();
@@ -408,11 +428,28 @@ function stopRecording(reason = 'user') {
 
 async function finalizeRecording() {
   await writeChain;
-  const writer = await writerReady.catch(() => null);
+  const writer = await writerReady.catch(error => {
+    directWriteFailure ||= error;
+    return null;
+  });
+
+  if (directWriteFailure) {
+    if (writer) {
+      try { await writer.abort(); } catch {}
+    }
+    const failedName = activeFileHandle?.name || activeFilename || 'video';
+    activeFileHandle = null;
+    selectedFileHandle = null;
+    chunks = [];
+    cleanupStreams();
+    throw new Error(`Ghi trực tiếp vào ${failedName} thất bại; TabFlow đã dừng thay vì xuất một video thiếu chunk.`);
+  }
+
   if (writer) await writer.close();
 
-  if (activeFileHandle) {
-    lastFile = await activeFileHandle.getFile();
+  const directFileHandle = activeFileHandle;
+  if (directFileHandle) {
+    lastFile = await directFileHandle.getFile();
   } else {
     lastFile = new File(chunks, activeFilename || recordingFilename({ mimeType: activeMime }), { type: activeMime });
   }
@@ -430,12 +467,12 @@ async function finalizeRecording() {
   resultCard.hidden = false;
   resultName.textContent = lastFile.name || activeFilename || 'Video đã sẵn sàng';
   resultMeta.textContent = `${formatBytes(lastFile.size)} · ${formatDuration(lastDurationMs)} · ${containerFromMime(activeMime).toUpperCase()} · ${Number(actualSettings.width || 0)}×${Number(actualSettings.height || 0)}`;
-  saveTarget.textContent = activeFileHandle
-    ? `Đã lưu trực tiếp: ${activeFileHandle.name}`
+  saveTarget.textContent = directFileHandle
+    ? `Đã lưu trực tiếp: ${directFileHandle.name}`
     : 'Video đang ở bộ nhớ tạm của trang; bấm “Tải video” để lưu xuống máy.';
 
-  if (activeFileHandle) {
-    setStatus(`Đã ghi xong ${activeFileHandle.name}. Bạn có thể xem lại hoặc tải thêm một bản sao.`, 'ok');
+  if (directFileHandle) {
+    setStatus(`Đã ghi xong ${directFileHandle.name}. Bạn có thể xem lại hoặc tải thêm một bản sao.`, 'ok');
   } else {
     setStatus('Video đã sẵn sàng. Hãy tải xuống trước khi đóng tab Recorder.', 'ok');
   }
@@ -443,6 +480,7 @@ async function finalizeRecording() {
   activeFileHandle = null;
   selectedFileHandle = null;
   chunks = [];
+  directWriteFailure = null;
   setState('ready', 'Đã xong');
   await refreshRecentDownloads();
 }
@@ -533,6 +571,7 @@ async function downloadRecording() {
 }
 
 async function captureScreenshot() {
+  let screenshotUrl = null;
   try {
     let width = 0;
     let height = 0;
@@ -558,14 +597,19 @@ async function captureScreenshot() {
     const blob = await new Promise((resolve, reject) => {
       canvas.toBlob(value => value ? resolve(value) : reject(new Error('Không encode được PNG')), 'image/png');
     });
+    screenshotUrl = URL.createObjectURL(blob);
     const id = await chrome.downloads.download({
-      url: URL.createObjectURL(blob),
+      url: screenshotUrl,
       filename: `TabFlow Captures/${screenshotFilename()}`,
       saveAs: false,
       conflictAction: 'uniquify'
     });
+    window.setTimeout(() => {
+      if (screenshotUrl) URL.revokeObjectURL(screenshotUrl);
+    }, 60_000);
     setStatus(`Đã chụp PNG ${width}×${height} (download #${id}).`, 'ok');
   } catch (error) {
+    if (screenshotUrl) URL.revokeObjectURL(screenshotUrl);
     setStatus(`Không chụp được ảnh: ${error.message}`, 'error');
   }
 }
@@ -607,7 +651,9 @@ async function refreshRecentDownloads() {
       open.type = 'button';
       open.textContent = '▶';
       open.title = 'Mở video';
-      open.addEventListener('click', () => chrome.downloads.open(item.id).catch(() => {}));
+      open.addEventListener('click', () => {
+        Promise.resolve(chrome.downloads.open(item.id)).catch(() => {});
+      });
       const show = document.createElement('button');
       show.className = 'icon-button';
       show.type = 'button';
