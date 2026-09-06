@@ -56,6 +56,7 @@ for (const file of manifestFiles) check(exists(file), `manifest reference exists
 const popup = read('popup/popup.html') + '\n' + read('popup/popup.js');
 const options = read('options/options.html');
 const readme = read('README.md');
+const lifecycle = read('service-worker.js');
 
 const forbiddenClaims = [
   /RAM đã dọn/i,
@@ -76,6 +77,8 @@ check(popup.includes('Unified Workspace'), 'popup launches Unified Workspace');
 check(popup.includes('Control Center'), 'popup launches Control Center');
 check(popup.includes('Capture Studio'), 'popup launches Capture Studio');
 check(!popup.includes('estimatedMbSaved') && !popup.includes('freedMb'), 'popup does not expose estimated RAM savings');
+check(!lifecycle.includes('estimatedMbSaved') && !lifecycle.includes('freedMb') && !lifecycle.includes('ESTIMATED_SAVINGS_PER_TAB_MB'), 'lifecycle contract has no invented per-tab RAM estimate');
+check(!lifecycle.includes("case 'TILE_WINDOWS'"), 'obsolete fixed-resolution Tile Windows message is removed');
 check(options.includes('Runtime bảo vệ'), 'settings explain productive-tab protection');
 check(readme.includes('Chrome **116 or newer**'), 'README documents the real browser floor');
 check(readme.includes('does **not** claim a fixed number of megabytes saved per tab'), 'README explicitly rejects fake per-tab RAM accounting');
