@@ -12,18 +12,17 @@
       <div class="header-icon">⚡</div>
       <div class="header-title">
         <h1>ChatGPT TabFlow Settings</h1>
-        <p>Tối ưu hóa hiệu năng, quản lý bộ nhớ và trải nghiệm làm việc đa tab ChatGPT</p>
+        <p>Cài đặt nền cho tab lifecycle, page booster và Chrome Tab Group. Memory/Runtime nâng cao nằm trong Control Center.</p>
       </div>
     </header>
 
-    <!-- Section 1: Memory & Hibernation -->
     <section class="section">
-      <h2 class="section-title"><span>💤</span> Quản lý Bộ nhớ & Tự động Ngủ đông (RAM Saver)</h2>
+      <h2 class="section-title"><span>💤</span> Tab lifecycle</h2>
 
       <div class="setting-row">
         <div class="setting-info">
-          <div class="setting-title">Tự động đóng băng tab nền (Auto-Hibernate)</div>
-          <div class="setting-desc">Tự động đưa các tab ChatGPT không sử dụng vào chế độ ngủ đông, giải phóng 85-90% RAM nhưng vẫn giữ nguyên vị trí và URL.</div>
+          <div class="setting-title">Tự cho chat nền nhàn rỗi ngủ</div>
+          <div class="setting-desc">Dùng Chrome tab discard để giải phóng tài nguyên của tab nền. Tab đang gõ hoặc đang tạo câu trả lời được Runtime bảo vệ và không bị discard.</div>
         </div>
         <label class="switch">
           <input type="checkbox" id="opt-auto-discard">
@@ -33,12 +32,12 @@
 
       <div class="setting-row">
         <div class="setting-info">
-          <div class="setting-title">Thời gian chờ trước khi ngủ đông</div>
-          <div class="setting-desc">Khoảng thời gian một tab ChatGPT không được tương tác trước khi tự động ngủ đông.</div>
+          <div class="setting-title">Thời gian idle trước khi ngủ</div>
+          <div class="setting-desc">Khoảng thời gian tab nền không được truy cập trước khi TabFlow xem xét hibernate. Runtime vẫn kiểm tra trạng thái live trước khi discard.</div>
         </div>
         <select id="opt-idle-minutes" class="select-input">
           <option value="3">3 phút</option>
-          <option value="5">5 phút (Khuyên dùng)</option>
+          <option value="5">5 phút</option>
           <option value="10">10 phút</option>
           <option value="15">15 phút</option>
           <option value="30">30 phút</option>
@@ -46,14 +45,13 @@
       </div>
     </section>
 
-    <!-- Section 2: In-Page Performance Booster -->
     <section class="section">
-      <h2 class="section-title"><span>🚀</span> Bộ tăng tốc trực tiếp trên trang ChatGPT (DOM Booster)</h2>
+      <h2 class="section-title"><span>🚀</span> Page booster</h2>
 
       <div class="setting-row">
         <div class="setting-info">
-          <div class="setting-title">Ảo hóa DOM (DOM Virtualization)</div>
-          <div class="setting-desc">Sử dụng CSS content-visibility để bỏ qua việc render các tin nhắn nằm ngoài màn hình trong các đoạn chat dài. Giảm giật lag 100%.</div>
+          <div class="setting-title">Giảm render ngoài viewport</div>
+          <div class="setting-desc">Dùng CSS content-visibility khi phù hợp để giảm công việc render của nội dung ngoài màn hình. Mức cải thiện phụ thuộc độ dài chat và phiên bản UI ChatGPT.</div>
         </div>
         <label class="switch">
           <input type="checkbox" id="opt-dom-booster">
@@ -63,8 +61,8 @@
 
       <div class="setting-row">
         <div class="setting-info">
-          <div class="setting-title">Chống trễ khi gõ prompt (Typing Latency Shield)</div>
-          <div class="setting-desc">Tạm ngưng các hiệu ứng animation và re-render ngầm khi người dùng đang gõ phím, đảm bảo chữ hiển thị mượt mà tức thì.</div>
+          <div class="setting-title">Typing shield</div>
+          <div class="setting-desc">Khi đang nhập prompt, TabFlow giảm một số công việc giao diện do extension sở hữu để ưu tiên tương tác. Không có cam kết độ trễ cố định theo mili-giây.</div>
         </div>
         <label class="switch">
           <input type="checkbox" id="opt-typing-shield">
@@ -74,8 +72,8 @@
 
       <div class="setting-row">
         <div class="setting-info">
-          <div class="setting-title">Tắt hiệu ứng mờ GPU (Kill Heavy Blurs)</div>
-          <div class="setting-desc">Loại bỏ backdrop-filter (blur) trên thanh tiêu đề và nút cuộn để giảm tải tối đa cho chip đồ họa và CPU.</div>
+          <div class="setting-title">Giảm animation/blur nặng</div>
+          <div class="setting-desc">Giảm một số hiệu ứng hình ảnh tốn tài nguyên khi booster có thể làm vậy an toàn. Không thay đổi logic gửi prompt hay dữ liệu cuộc trò chuyện.</div>
         </div>
         <label class="switch">
           <input type="checkbox" id="opt-kill-animations">
@@ -84,14 +82,13 @@
       </div>
     </section>
 
-    <!-- Section 3: Tab Organization -->
     <section class="section">
-      <h2 class="section-title"><span>📁</span> Gom nhóm Tab Chrome (Tab Groups)</h2>
+      <h2 class="section-title"><span>📁</span> Chrome Tab Group</h2>
 
       <div class="setting-row">
         <div class="setting-info">
-          <div class="setting-title">Tự động gom tab ChatGPT vào Tab Group</div>
-          <div class="setting-desc">Tự động nhóm tất cả các tab ChatGPT vào một nhóm có màu sắc riêng trên thanh tab của Chrome.</div>
+          <div class="setting-title">Tự gom tab ChatGPT</div>
+          <div class="setting-desc">Cho phép TabFlow gom các tab ChatGPT vào một Chrome Tab Group khi workflow yêu cầu.</div>
         </div>
         <label class="switch">
           <input type="checkbox" id="opt-group-tabs">
@@ -101,7 +98,7 @@
 
       <div class="setting-row">
         <div class="setting-info">
-          <div class="setting-title">Tên nhóm Tab</div>
+          <div class="setting-title">Tên Tab Group</div>
           <div class="setting-desc">Tên hiển thị của nhóm tab trên Chrome.</div>
         </div>
         <input type="text" id="opt-group-name" class="text-input" value="🤖 ChatGPT Workspace">
@@ -109,15 +106,15 @@
 
       <div class="setting-row">
         <div class="setting-info">
-          <div class="setting-title">Màu sắc nhóm Tab</div>
+          <div class="setting-title">Màu Tab Group</div>
           <div class="setting-desc">Màu nhận diện nhóm trên trình duyệt.</div>
         </div>
         <select id="opt-group-color" class="select-input">
-          <option value="purple">Tím (Purple)</option>
-          <option value="blue">Xanh dương (Blue)</option>
-          <option value="green">Xanh lá (Green)</option>
-          <option value="cyan">Xanh lam (Cyan)</option>
-          <option value="orange">Cam (Orange)</option>
+          <option value="purple">Tím</option>
+          <option value="blue">Xanh dương</option>
+          <option value="green">Xanh lá</option>
+          <option value="cyan">Xanh lam</option>
+          <option value="orange">Cam</option>
         </select>
       </div>
     </section>
@@ -127,8 +124,7 @@
     </footer>
   </div>
 
-  <div id="toast" class="toast">Đã lưu cài đặt thành công!</div>
-
+  <div id="toast" class="toast">Đã lưu cài đặt.</div>
   <script src="options.js"></script>
 </body>
 </html>

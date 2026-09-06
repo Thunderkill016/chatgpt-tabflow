@@ -1,6 +1,8 @@
+import { canDiscardRuntimeTab } from './runtime/protection.js';
+
 /**
- * ChatGPT TabFlow - Background Service Worker (Manifest V3)
- * Manages tab lifecycle, native memory hibernation, tab grouping, and auto-alarms.
+ * TabFlow background lifecycle controller (Manifest V3).
+ * Manages ChatGPT tabs, sessions, grouping and safe hibernation.
  */
 
 const DEFAULT_SETTINGS = {
@@ -16,61 +18,49 @@ const DEFAULT_SETTINGS = {
 
 const DEFAULT_STATS = {
   totalDiscardCount: 0,
-  estimatedMbSaved: 0,
   lastDiscardTimestamp: 0
 };
 
-// Estimated RAM footprint of a live ChatGPT React SPA tab (~450MB) vs discarded (~35MB)
-const ESTIMATED_SAVINGS_PER_TAB_MB = 415;
-
-/**
- * Checks if a given URL belongs to ChatGPT
- */
 export function isChatGptUrl(url) {
   if (!url || typeof url !== 'string') return false;
   try {
     const parsed = new URL(url);
     const host = parsed.hostname.toLowerCase();
     return host === 'chatgpt.com' || host.endsWith('.chatgpt.com') ||
-           host === 'chat.openai.com' || host.endsWith('.chat.openai.com');
+      host === 'chat.openai.com' || host.endsWith('.chat.openai.com');
   } catch {
     return false;
   }
 }
 
-/**
- * Retrieve current extension settings from chrome.storage.local
- */
 async function getStoredSettings() {
   const result = await chrome.storage.local.get('settings');
   return { ...DEFAULT_SETTINGS, ...(result.settings || {}) };
 }
 
-/**
- * Retrieve current statistics from chrome.storage.local
- */
-async function getStoredStats() {
-  const result = await chrome.storage.local.get('stats');
-  return { ...DEFAULT_STATS, ...(result.stats || {}) };
+function sanitizeStats(value = {}) {
+  return {
+    totalDiscardCount: Number(value.totalDiscardCount) || 0,
+    lastDiscardTimestamp: Number(value.lastDiscardTimestamp) || 0
+  };
 }
 
-/**
- * Update stored statistics
- */
+async function getStoredStats() {
+  const result = await chrome.storage.local.get('stats');
+  return sanitizeStats(result.stats || DEFAULT_STATS);
+}
+
 async function recordDiscardStats(count) {
   if (count <= 0) return;
   const currentStats = await getStoredStats();
-  const updatedStats = {
-    totalDiscardCount: currentStats.totalDiscardCount + count,
-    estimatedMbSaved: currentStats.estimatedMbSaved + (count * ESTIMATED_SAVINGS_PER_TAB_MB),
-    lastDiscardTimestamp: Date.now()
-  };
-  await chrome.storage.local.set({ stats: updatedStats });
+  await chrome.storage.local.set({
+    stats: {
+      totalDiscardCount: currentStats.totalDiscardCount + count,
+      lastDiscardTimestamp: Date.now()
+    }
+  });
 }
 
-/**
- * Query all open ChatGPT tabs across all windows
- */
 export async function queryChatGptTabs(options = {}) {
   const { excludeActive = false } = options;
   const tabs = await chrome.tabs.query({});
@@ -81,13 +71,14 @@ export async function queryChatGptTabs(options = {}) {
   });
 }
 
-/**
- * Discard (hibernate) a specific tab to free its memory
- */
 export async function discardSingleTab(tabId) {
   try {
     const tab = await chrome.tabs.get(tabId);
     if (!tab || tab.discarded) return false;
+    if (!(await canDiscardRuntimeTab(tabId))) {
+      console.info(`[TabFlow] Skip discard for protected productive tab ${tabId}`);
+      return false;
+    }
     await chrome.tabs.discard(tabId);
     await recordDiscardStats(1);
     await updateBadge();
@@ -98,21 +89,22 @@ export async function discardSingleTab(tabId) {
   }
 }
 
-/**
- * Discard all background/inactive ChatGPT tabs across all windows
- */
 export async function discardAllBackgroundTabs() {
   const tabs = await queryChatGptTabs({ excludeActive: true });
   let discardedCount = 0;
+  let protectedCount = 0;
 
   for (const tab of tabs) {
-    if (!tab.discarded && tab.id) {
-      try {
-        await chrome.tabs.discard(tab.id);
-        discardedCount++;
-      } catch (err) {
-        console.warn(`[TabFlow] Discard failed for tab ${tab.id}:`, err?.message || err);
+    if (tab.discarded || !tab.id) continue;
+    try {
+      if (!(await canDiscardRuntimeTab(tab.id))) {
+        protectedCount++;
+        continue;
       }
+      await chrome.tabs.discard(tab.id);
+      discardedCount++;
+    } catch (err) {
+      console.warn(`[TabFlow] Discard failed for tab ${tab.id}:`, err?.message || err);
     }
   }
 
@@ -121,15 +113,9 @@ export async function discardAllBackgroundTabs() {
     await updateBadge();
   }
 
-  return {
-    discardedCount,
-    freedMb: discardedCount * ESTIMATED_SAVINGS_PER_TAB_MB
-  };
+  return { discardedCount, protectedCount };
 }
 
-/**
- * Automatically group ChatGPT tabs in Chrome
- */
 export async function groupChatGptTabs() {
   const settings = await getStoredSettings();
   if (!settings.groupTabsEnabled) return;
@@ -137,38 +123,34 @@ export async function groupChatGptTabs() {
   const windows = await chrome.windows.getAll({ populate: true });
   for (const win of windows) {
     const chatGptTabIds = (win.tabs || [])
-      .filter(t => isChatGptUrl(t.url))
-      .map(t => t.id)
+      .filter(tab => isChatGptUrl(tab.url))
+      .map(tab => tab.id)
       .filter(Boolean);
 
-    if (chatGptTabIds.length > 0) {
-      try {
-        const groupId = await chrome.tabs.group({
-          tabIds: chatGptTabIds,
-          createProperties: { windowId: win.id }
-        });
-        await chrome.tabGroups.update(groupId, {
-          title: settings.groupName || '🤖 ChatGPT Workspace',
-          color: settings.groupColor || 'purple'
-        });
-      } catch (err) {
-        console.warn('[TabFlow] Tab grouping skipped or failed:', err?.message || err);
-      }
+    if (chatGptTabIds.length === 0) continue;
+    try {
+      const groupId = await chrome.tabs.group({
+        tabIds: chatGptTabIds,
+        createProperties: { windowId: win.id }
+      });
+      await chrome.tabGroups.update(groupId, {
+        title: settings.groupName || '🤖 ChatGPT Workspace',
+        color: settings.groupColor || 'purple'
+      });
+    } catch (err) {
+      console.warn('[TabFlow] Tab grouping skipped or failed:', err?.message || err);
     }
   }
 }
 
-/**
- * Stash all open ChatGPT tabs into saved sessions and close them to free 100% RAM
- */
 export async function stashCurrentSession(sessionName) {
   const tabs = await queryChatGptTabs();
   if (tabs.length === 0) return { success: false, message: 'Không có tab ChatGPT nào đang mở' };
 
-  const tabList = tabs.map(t => ({
-    url: t.url,
-    title: t.title || 'ChatGPT Conversation',
-    pinned: t.pinned || false
+  const tabList = tabs.map(tab => ({
+    url: tab.url,
+    title: tab.title || 'ChatGPT Conversation',
+    pinned: tab.pinned || false
   }));
 
   const session = {
@@ -184,21 +166,16 @@ export async function stashCurrentSession(sessionName) {
   list.unshift(session);
   await chrome.storage.local.set({ stashedSessions: list });
 
-  // Close the open tabs
-  const tabIds = tabs.map(t => t.id).filter(Boolean);
+  const tabIds = tabs.map(tab => tab.id).filter(Boolean);
   await chrome.tabs.remove(tabIds);
-
   await updateBadge();
   return { success: true, session };
 }
 
-/**
- * Restore a stashed session by reopening all stored URLs
- */
 export async function restoreSession(sessionId) {
   const stored = await chrome.storage.local.get('stashedSessions');
   const list = Array.isArray(stored.stashedSessions) ? stored.stashedSessions : [];
-  const target = list.find(s => s.id === sessionId);
+  const target = list.find(session => session.id === sessionId);
   if (!target || !target.tabs || target.tabs.length === 0) {
     return { success: false, message: 'Phiên lưu trữ không tồn tại hoặc rỗng' };
   }
@@ -216,7 +193,6 @@ export async function restoreSession(sessionId) {
     if (newTab.id) createdTabIds.push(newTab.id);
   }
 
-  // Auto group the restored tabs
   const settings = await getStoredSettings();
   if (settings.groupTabsEnabled && createdTabIds.length > 0) {
     try {
@@ -228,8 +204,8 @@ export async function restoreSession(sessionId) {
         title: settings.groupName,
         color: settings.groupColor
       });
-    } catch (e) {
-      console.warn('[TabFlow] Could not group restored tabs:', e?.message || e);
+    } catch (error) {
+      console.warn('[TabFlow] Could not group restored tabs:', error?.message || error);
     }
   }
 
@@ -237,45 +213,31 @@ export async function restoreSession(sessionId) {
   return { success: true, count: createdTabIds.length };
 }
 
-/**
- * Delete a stashed session
- */
 export async function deleteStashedSession(sessionId) {
   const stored = await chrome.storage.local.get('stashedSessions');
   const list = Array.isArray(stored.stashedSessions) ? stored.stashedSessions : [];
-  const updated = list.filter(s => s.id !== sessionId);
-  await chrome.storage.local.set({ stashedSessions: updated });
+  await chrome.storage.local.set({ stashedSessions: list.filter(session => session.id !== sessionId) });
   return { success: true };
 }
 
-/**
- * Update the extension action badge with current tab statistics
- */
 export async function updateBadge() {
   try {
     const tabs = await queryChatGptTabs();
-    const count = tabs.length;
-
-    if (count === 0) {
+    if (tabs.length === 0) {
       await chrome.action.setBadgeText({ text: '' });
       return;
     }
 
-    const discarded = tabs.filter(t => t.discarded).length;
-    // If some are discarded, show active/total or total count
-    const badgeText = String(count);
-    await chrome.action.setBadgeText({ text: badgeText });
+    const discarded = tabs.filter(tab => tab.discarded).length;
+    await chrome.action.setBadgeText({ text: String(tabs.length) });
     await chrome.action.setBadgeBackgroundColor({
-      color: discarded > 0 ? '#10b981' : '#3b82f6' // Emerald when RAM saved, blue when running
+      color: discarded > 0 ? '#10b981' : '#3b82f6'
     });
   } catch (err) {
     console.warn('[TabFlow] Could not update badge:', err?.message || err);
   }
 }
 
-/**
- * Check idle times and auto-hibernate tabs exceeding the threshold
- */
 async function checkIdleAndHibernate() {
   const settings = await getStoredSettings();
   if (!settings.autoDiscardEnabled) return;
@@ -283,20 +245,18 @@ async function checkIdleAndHibernate() {
   const idleThresholdMs = (settings.discardIdleMinutes || 5) * 60 * 1000;
   const now = Date.now();
   const tabs = await queryChatGptTabs({ excludeActive: true });
-
   let discardedCount = 0;
+
   for (const tab of tabs) {
-    if (!tab.discarded && tab.id) {
-      // tab.lastAccessed is available in Chrome
-      const lastAccessed = tab.lastAccessed || (now - idleThresholdMs - 1);
-      if (now - lastAccessed >= idleThresholdMs) {
-        try {
-          await chrome.tabs.discard(tab.id);
-          discardedCount++;
-        } catch (e) {
-          console.warn(`[TabFlow] Auto-discard failed for ${tab.id}:`, e?.message || e);
-        }
-      }
+    if (tab.discarded || !tab.id) continue;
+    const lastAccessed = tab.lastAccessed || (now - idleThresholdMs - 1);
+    if (now - lastAccessed < idleThresholdMs) continue;
+    try {
+      if (!(await canDiscardRuntimeTab(tab.id))) continue;
+      await chrome.tabs.discard(tab.id);
+      discardedCount++;
+    } catch (error) {
+      console.warn(`[TabFlow] Auto-discard failed for ${tab.id}:`, error?.message || error);
     }
   }
 
@@ -306,232 +266,173 @@ async function checkIdleAndHibernate() {
   }
 }
 
-// ================= LIFECYCLE & EVENT LISTENERS =================
 if (typeof chrome !== 'undefined' && chrome.runtime) {
-  // Initialize settings and alarms on installation
   chrome.runtime.onInstalled.addListener(async () => {
-  const stored = await chrome.storage.local.get(['settings', 'stats']);
-  if (!stored.settings) {
-    await chrome.storage.local.set({ settings: DEFAULT_SETTINGS });
-  }
-  if (!stored.stats) {
-    await chrome.storage.local.set({ stats: DEFAULT_STATS });
-  }
+    const stored = await chrome.storage.local.get(['settings', 'stats']);
+    if (!stored.settings) await chrome.storage.local.set({ settings: DEFAULT_SETTINGS });
 
-  // Create recurring alarm for auto-discard check (runs every 1 minute)
-  await chrome.alarms.create('tabflow-auto-check', {
-    periodInMinutes: 1
+    // Normalize persisted statistics on every install/update so legacy fields
+    // disappear without keeping deprecated metrics in the runtime contract.
+    await chrome.storage.local.set({ stats: sanitizeStats(stored.stats || DEFAULT_STATS) });
+
+    await chrome.alarms.create('tabflow-auto-check', { periodInMinutes: 1 });
+    await updateBadge();
   });
 
-  await updateBadge();
-});
+  chrome.alarms.onAlarm.addListener(async alarm => {
+    if (alarm.name === 'tabflow-auto-check') await checkIdleAndHibernate();
+  });
 
-// Alarm handler
-chrome.alarms.onAlarm.addListener(async (alarm) => {
-  if (alarm.name === 'tabflow-auto-check') {
-    await checkIdleAndHibernate();
-  }
-});
+  chrome.tabs.onCreated.addListener(async tab => {
+    if (isChatGptUrl(tab.url || tab.pendingUrl)) await updateBadge();
+  });
 
-// Tab event listeners to update badge and organize
-chrome.tabs.onCreated.addListener(async (tab) => {
-  if (isChatGptUrl(tab.url || tab.pendingUrl)) {
-    await updateBadge();
-  }
-});
-
-chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  if (changeInfo.status === 'complete' || changeInfo.url) {
-    if (isChatGptUrl(tab.url)) {
+  chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+    if ((changeInfo.status === 'complete' || changeInfo.url) && isChatGptUrl(tab.url)) {
       await updateBadge();
     }
-  }
-});
+  });
 
-chrome.tabs.onRemoved.addListener(async () => {
-  await updateBadge();
-});
+  chrome.tabs.onRemoved.addListener(async () => updateBadge());
+  chrome.tabs.onActivated.addListener(async () => updateBadge());
 
-chrome.tabs.onActivated.addListener(async () => {
-  await updateBadge();
-});
-
-// Global Keyboard Commands
-chrome.commands.onCommand.addListener(async (command) => {
-  try {
-    if (command === 'open-side-panel') {
-      const currentWindow = await chrome.windows.getCurrent();
-      await chrome.sidePanel.open({ windowId: currentWindow.id });
-    } else if (command === 'freeze-background-tabs') {
-      await discardAllBackgroundTabs();
-    }
-  } catch (err) {
-    console.error('[TabFlow] Command error:', err);
-  }
-});
-
-// Messaging API for popup, sidepanel, and content-scripts
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  (async () => {
+  chrome.commands.onCommand.addListener(async command => {
     try {
-      switch (message.type) {
-        case 'GET_TABS_DATA': {
-          const tabs = await queryChatGptTabs();
-          const stats = await getStoredStats();
-          const settings = await getStoredSettings();
-          sendResponse({
-            success: true,
-            tabs: tabs.map(t => ({
-              id: t.id,
-              title: t.title || 'ChatGPT Conversation',
-              url: t.url,
-              active: t.active,
-              discarded: Boolean(t.discarded),
-              lastAccessed: t.lastAccessed || 0,
-              favIconUrl: t.favIconUrl
-            })),
-            stats,
-            settings
-          });
-          break;
-        }
+      if (command === 'open-side-panel') {
+        const currentWindow = await chrome.windows.getCurrent();
+        await chrome.sidePanel.open({ windowId: currentWindow.id });
+      } else if (command === 'freeze-background-tabs') {
+        await discardAllBackgroundTabs();
+      }
+    } catch (error) {
+      console.error('[TabFlow] Command error:', error);
+    }
+  });
 
-        case 'DISCARD_ALL_BACKGROUND': {
-          const res = await discardAllBackgroundTabs();
-          sendResponse({ success: true, ...res });
-          break;
-        }
-
-        case 'DISCARD_TAB': {
-          const success = await discardSingleTab(message.tabId);
-          sendResponse({ success });
-          break;
-        }
-
-        case 'ACTIVATE_TAB': {
-          if (message.tabId) {
-            const tab = await chrome.tabs.update(message.tabId, { active: true });
-            if (tab.windowId) {
-              await chrome.windows.update(tab.windowId, { focused: true });
-            }
-            sendResponse({ success: true });
-          } else {
-            sendResponse({ success: false, error: 'Missing tabId' });
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    (async () => {
+      try {
+        switch (message.type) {
+          case 'GET_TABS_DATA': {
+            const tabs = await queryChatGptTabs();
+            const stats = await getStoredStats();
+            const settings = await getStoredSettings();
+            sendResponse({
+              success: true,
+              tabs: tabs.map(tab => ({
+                id: tab.id,
+                title: tab.title || 'ChatGPT Conversation',
+                url: tab.url,
+                active: tab.active,
+                discarded: Boolean(tab.discarded),
+                lastAccessed: tab.lastAccessed || 0,
+                favIconUrl: tab.favIconUrl
+              })),
+              stats,
+              settings
+            });
+            break;
           }
-          break;
-        }
 
-        case 'CLOSE_TAB': {
-          if (message.tabId) {
+          case 'DISCARD_ALL_BACKGROUND': {
+            const result = await discardAllBackgroundTabs();
+            sendResponse({ success: true, ...result });
+            break;
+          }
+
+          case 'DISCARD_TAB': {
+            const success = await discardSingleTab(message.tabId);
+            sendResponse({ success });
+            break;
+          }
+
+          case 'ACTIVATE_TAB': {
+            if (!message.tabId) {
+              sendResponse({ success: false, error: 'Missing tabId' });
+              break;
+            }
+            const tab = await chrome.tabs.update(message.tabId, { active: true });
+            if (tab.windowId) await chrome.windows.update(tab.windowId, { focused: true });
+            sendResponse({ success: true });
+            break;
+          }
+
+          case 'CLOSE_TAB': {
+            if (!message.tabId) {
+              sendResponse({ success: false, error: 'Missing tabId' });
+              break;
+            }
             await chrome.tabs.remove(message.tabId);
             await updateBadge();
             sendResponse({ success: true });
-          } else {
-            sendResponse({ success: false, error: 'Missing tabId' });
+            break;
           }
-          break;
+
+          case 'GROUP_TABS': {
+            await groupChatGptTabs();
+            sendResponse({ success: true });
+            break;
+          }
+
+          case 'STASH_SESSION': {
+            sendResponse(await stashCurrentSession(message.sessionName));
+            break;
+          }
+
+          case 'GET_STASHED_SESSIONS': {
+            const stored = await chrome.storage.local.get('stashedSessions');
+            sendResponse({
+              success: true,
+              sessions: Array.isArray(stored.stashedSessions) ? stored.stashedSessions : []
+            });
+            break;
+          }
+
+          case 'RESTORE_SESSION': {
+            sendResponse(await restoreSession(message.sessionId));
+            break;
+          }
+
+          case 'DELETE_STASHED_SESSION': {
+            sendResponse(await deleteStashedSession(message.sessionId));
+            break;
+          }
+
+          case 'GET_SETTINGS': {
+            sendResponse({ success: true, settings: await getStoredSettings() });
+            break;
+          }
+
+          case 'SAVE_SETTINGS': {
+            const current = await getStoredSettings();
+            const updated = { ...current, ...message.settings };
+            await chrome.storage.local.set({ settings: updated });
+            sendResponse({ success: true, settings: updated });
+            break;
+          }
+
+          case 'OPEN_SIDE_PANEL': {
+            const currentWindow = await chrome.windows.getCurrent();
+            await chrome.sidePanel.open({ windowId: currentWindow.id });
+            sendResponse({ success: true });
+            break;
+          }
+
+          case 'OPEN_WORKSPACE': {
+            await chrome.tabs.create({ url: chrome.runtime.getURL('workspace/index.html') });
+            sendResponse({ success: true });
+            break;
+          }
+
+          default:
+            sendResponse({ success: false, error: `Unknown message type: ${message.type}` });
         }
-
-        case 'GROUP_TABS': {
-          await groupChatGptTabs();
-          sendResponse({ success: true });
-          break;
-        }
-
-        case 'STASH_SESSION': {
-          const res = await stashCurrentSession(message.sessionName);
-          sendResponse(res);
-          break;
-        }
-
-        case 'GET_STASHED_SESSIONS': {
-          const stored = await chrome.storage.local.get('stashedSessions');
-          sendResponse({
-            success: true,
-            sessions: Array.isArray(stored.stashedSessions) ? stored.stashedSessions : []
-          });
-          break;
-        }
-
-        case 'RESTORE_SESSION': {
-          const res = await restoreSession(message.sessionId);
-          sendResponse(res);
-          break;
-        }
-
-        case 'DELETE_STASHED_SESSION': {
-          const res = await deleteStashedSession(message.sessionId);
-          sendResponse(res);
-          break;
-        }
-
-        case 'GET_SETTINGS': {
-          const settings = await getStoredSettings();
-          sendResponse({ success: true, settings });
-          break;
-        }
-
-        case 'SAVE_SETTINGS': {
-          const current = await getStoredSettings();
-          const updated = { ...current, ...message.settings };
-          await chrome.storage.local.set({ settings: updated });
-          sendResponse({ success: true, settings: updated });
-          break;
-        }
-
-        case 'OPEN_SIDE_PANEL': {
-          const currentWindow = await chrome.windows.getCurrent();
-          await chrome.sidePanel.open({ windowId: currentWindow.id });
-          sendResponse({ success: true });
-          break;
-        }
-
-        case 'OPEN_WORKSPACE': {
-          const workspaceUrl = chrome.runtime.getURL('workspace/index.html');
-          await chrome.tabs.create({ url: workspaceUrl });
-          sendResponse({ success: true });
-          break;
-        }
-
-        case 'TILE_WINDOWS': {
-          const allWin = await chrome.windows.getAll();
-          const baseWin = allWin[0] || {};
-          const screenW = 1920;
-          const halfW = Math.floor(screenW / 2);
-          const screenH = 1080;
-
-          await chrome.windows.create({
-            url: 'https://chatgpt.com/',
-            left: 0,
-            top: 0,
-            width: halfW,
-            height: screenH,
-            type: 'normal'
-          });
-
-          await chrome.windows.create({
-            url: 'https://chatgpt.com/',
-            left: halfW,
-            top: 0,
-            width: halfW,
-            height: screenH,
-            type: 'normal'
-          });
-
-          sendResponse({ success: true });
-          break;
-        }
-
-        default:
-          sendResponse({ success: false, error: `Unknown message type: ${message.type}` });
-          break;
+      } catch (error) {
+        console.error('[TabFlow] Message handling error:', error);
+        sendResponse({ success: false, error: error?.message || String(error) });
       }
-    } catch (err) {
-      console.error('[TabFlow] Message handling error:', err);
-      sendResponse({ success: false, error: err?.message || String(err) });
-    }
-  })();
+    })();
 
-    return true; // Keep message channel open for async response
+    return true;
   });
 }

@@ -1,0 +1,8 @@
+/*
+ * Memory status remains in the DOM for diagnostics/E2E, but it must never
+ * occupy ChatGPT's working canvas. Project/memory state is available through
+ * TabFlow's side panel/workspace surfaces instead of a permanent floating pill.
+ */
+#tabflow-memory-status-host {
+  display: none !important;
+}

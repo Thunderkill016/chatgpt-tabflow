@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "ChatGPT TabFlow — Anti-Lag & Multi-Tab Hub",
-  "version": "1.0.0",
-  "description": "Làm việc với nhiều tab ChatGPT mượt mà không bị lag. Đóng băng tab nền giải phóng RAM, ảo hóa DOM và Side Panel tập trung.",
+  "name": "ChatGPT TabFlow — Cognitive Developer OS",
+  "version": "3.2.0",
+  "minimum_chrome_version": "116",
+  "description": "Local-first cognitive and performance layer for ChatGPT: persistent project memory, adaptive N-tab runtime, RAG, unified multi-chat workspace, safe tab hibernation and Capture Studio.",
   "icons": {
     "16": "icons/icon-16.png",
     "48": "icons/icon-48.png",
@@ -14,23 +15,18 @@
     "alarms",
     "sidePanel",
     "tabGroups",
-    "declarativeNetRequest"
+    "declarativeNetRequest",
+    "offscreen",
+    "unlimitedStorage",
+    "system.memory",
+    "downloads"
   ],
-  "declarative_net_request": {
-    "rule_resources": [
-      {
-        "id": "ruleset_1",
-        "enabled": true,
-        "path": "rules/rules.json"
-      }
-    ]
-  },
   "host_permissions": [
     "https://chatgpt.com/*",
     "https://chat.openai.com/*"
   ],
   "background": {
-    "service_worker": "service-worker.js",
+    "service_worker": "v3/service-worker.js",
     "type": "module"
   },
   "action": {
@@ -43,7 +39,7 @@
     "default_title": "ChatGPT TabFlow"
   },
   "side_panel": {
-    "default_path": "sidepanel/index.html"
+    "default_path": "v3/sidepanel.html"
   },
   "options_ui": {
     "page": "options/options.html",
@@ -56,10 +52,13 @@
         "https://chat.openai.com/*"
       ],
       "js": [
+        "content-scripts/frame-scope-gate.js",
+        "content-scripts/memory-fetch-bridge.js",
         "content-scripts/fetch-proxy.js"
       ],
       "run_at": "document_start",
-      "world": "MAIN"
+      "world": "MAIN",
+      "all_frames": true
     },
     {
       "matches": [
@@ -67,11 +66,38 @@
         "https://chat.openai.com/*"
       ],
       "js": [
+        "content-scripts/frame-scope-gate.js",
+        "content-scripts/memory-client.js"
+      ],
+      "css": [
+        "content-scripts/memory-status.css"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*"
+      ],
+      "js": [
+        "content-scripts/runtime-agent.js",
         "content-scripts/booster.js"
       ],
       "css": [
         "content-scripts/booster.css"
       ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*"
+      ],
+      "js": [
+        "content-scripts/workspace-frame-bridge.js"
+      ],
+      "all_frames": true,
       "run_at": "document_idle"
     }
   ],
@@ -81,14 +107,14 @@
         "default": "Alt+C",
         "mac": "Alt+C"
       },
-      "description": "Mở ChatGPT TabFlow Side Panel"
+      "description": "Mở ChatGPT TabFlow Control Center"
     },
     "freeze-background-tabs": {
       "suggested_key": {
         "default": "Alt+F",
         "mac": "Alt+F"
       },
-      "description": "Đóng băng toàn bộ tab ChatGPT chạy ngầm"
+      "description": "Cho các tab ChatGPT nền thực sự nhàn rỗi ngủ"
     }
   }
 }

@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TabFlow Control Center</title>
+  <link rel="stylesheet" href="../sidepanel/style.css">
+  <link rel="stylesheet" href="sidepanel-memory.css">
+  <link rel="stylesheet" href="sidepanel-runtime.css">
+  <link rel="stylesheet" href="sidepanel-control.css">
+</head>
+<body>
+  <div class="container control-center">
+    <header class="control-header">
+      <div class="control-brand">
+        <div class="brand-icon" aria-hidden="true">⚡</div>
+        <div class="control-brand-copy">
+          <div class="control-brand-title">TabFlow <span id="badge-version" class="badge-version">v3.2</span></div>
+          <div class="control-brand-sub">ChatGPT Control Center</div>
+        </div>
+      </div>
+      <div class="control-header-actions">
+        <button id="btn-refresh" class="icon-btn" type="button" title="Đồng bộ trạng thái">↻</button>
+        <button id="btn-options" class="icon-btn" type="button" title="Cài đặt TabFlow">⚙</button>
+      </div>
+    </header>
+
+    <section class="control-current" aria-label="Chat hiện tại">
+      <div class="control-current-head">
+        <span class="control-eyebrow">Chat hiện tại</span>
+        <button id="control-open-memory" class="control-link-btn" type="button">Memory ›</button>
+      </div>
+      <strong id="control-current-chat">Đang đọc tab hiện tại…</strong>
+      <div class="control-current-meta">
+        <span id="control-current-project">Đang kiểm tra Project Memory…</span>
+        <span id="control-memory-state" class="control-memory-state" data-state="off">Memory —</span>
+      </div>
+    </section>
+
+    <section class="control-workspace">
+      <button id="btn-open-coding-hub" class="control-workspace-btn" type="button" title="Mở mọi chat trong Unified Workspace">
+        <span>
+          <strong>Mở Unified Workspace</strong>
+          <small id="control-workspace-summary">Đang đồng bộ các chat…</small>
+        </span>
+        <span class="control-workspace-arrow" aria-hidden="true">›</span>
+      </button>
+    </section>
+
+    <section class="control-summary" aria-label="Trạng thái TabFlow">
+      <span><strong id="control-chat-count">0</strong> chat đang mở</span>
+      <span id="control-runtime-summary">Runtime đang khởi tạo…</span>
+    </section>
+
+    <details class="control-tools">
+      <summary><span>Công cụ phiên</span><span aria-hidden="true">⋯</span></summary>
+      <div class="control-tools-grid">
+        <button id="btn-open-recorder" class="control-tool-btn" type="button">🎥 Quay / Chụp 4K</button>
+        <button id="btn-turbo-freeze" class="control-tool-btn" type="button">☾ Cho chat nhàn rỗi ngủ</button>
+        <button id="btn-group-tabs" class="control-tool-btn" type="button">Gom Tab Group</button>
+        <button id="btn-stash-session" class="control-tool-btn" type="button">Lưu phiên & đóng chat</button>
+      </div>
+    </details>
+
+    <nav class="view-nav cognitive-nav control-nav" aria-label="TabFlow views">
+      <button id="tab-nav-active" class="nav-tab active" type="button">Chats <span id="count-open" class="control-nav-count">0</span></button>
+      <button id="tab-nav-memory" class="nav-tab memory-nav" type="button">Memory</button>
+      <button id="tab-nav-runtime" class="nav-tab runtime-nav" type="button">Runtime</button>
+      <button id="tab-nav-stashed" class="nav-tab" type="button">Phiên <span id="count-stashed" class="control-nav-count">0</span></button>
+      <button id="tab-nav-projects" class="nav-tab" type="button">Projects <span id="count-projects" class="control-nav-count">0</span></button>
+    </nav>
+
+    <div id="search-section" class="search-wrapper control-search">
+      <span class="search-icon" aria-hidden="true">⌕</span>
+      <input type="search" id="search-input" class="search-input" placeholder="Tìm chat…" autocomplete="off">
+    </div>
+
+    <main id="active-tabs-view" class="list-container control-list">
+      <div class="control-empty">Đang đồng bộ các tab ChatGPT…</div>
+    </main>
+
+    <main id="stashed-sessions-view" class="list-container control-list" style="display:none;">
+      <div class="control-empty">Chưa có phiên đã lưu.</div>
+    </main>
+
+    <main id="projects-vault-view" class="list-container control-list" style="display:none;">
+      <div class="control-project-toolbar">
+        <button id="btn-add-project" class="btn-primary control-add-project" type="button">＋ Tạo project mới</button>
+      </div>
+      <div id="projects-list" style="display:flex;flex-direction:column;gap:6px;width:100%;"></div>
+    </main>
+
+    <main id="memory-view" class="memory-view" style="display:none;">
+      <section class="memory-hero">
+        <div class="memory-hero-row">
+          <div>
+            <div class="memory-eyebrow">PROJECT MEMORY</div>
+            <h2 id="memory-project-name">Chưa gắn project</h2>
+            <div id="memory-binding-sub" class="memory-muted">Gắn chat hiện tại vào project để dùng chung context giữa các cuộc chat.</div>
+          </div>
+          <span id="memory-health" class="memory-health off">OFF</span>
+        </div>
+        <div class="memory-bind-row">
+          <select id="memory-project-select" class="memory-select" aria-label="Chọn project"></select>
+          <button id="memory-bind-btn" class="btn-primary memory-compact" type="button">Gắn chat</button>
+        </div>
+      </section>
+
+      <section class="memory-stat-grid" aria-label="Memory statistics">
+        <div class="memory-stat"><span id="memory-files">0</span><small>FILES</small></div>
+        <div class="memory-stat"><span id="memory-chunks">0</span><small>CHUNKS</small></div>
+        <div class="memory-stat"><span id="memory-decisions">0</span><small>RULES</small></div>
+        <div class="memory-stat"><span id="memory-conversations">0</span><small>CHATS</small></div>
+      </section>
+
+      <section class="memory-card rag-card">
+        <div class="memory-card-head">
+          <div><strong>Context cho prompt hiện tại</strong><div class="memory-muted">TabFlow retrieval context trước khi gửi prompt</div></div>
+          <button id="memory-sync-btn" class="memory-ghost-btn" type="button">↻ Sync</button>
+        </div>
+        <div id="memory-rag-state" class="rag-state">Chưa có context được chuẩn bị.</div>
+        <div id="memory-rag-citations" class="citation-chips"></div>
+      </section>
+
+      <section class="memory-card">
+        <div class="memory-card-head"><div><strong>Tìm trong Project Memory</strong><div class="memory-muted">Tìm code, file và quyết định đã index cục bộ</div></div></div>
+        <div class="memory-search-row">
+          <input id="memory-query" class="memory-input" placeholder="VD: refresh token, audio clock…">
+          <button id="memory-query-btn" class="memory-ghost-btn primaryish" type="button">Tìm</button>
+        </div>
+        <div id="memory-query-meta" class="memory-muted"></div>
+        <pre id="memory-query-preview" class="memory-preview" hidden></pre>
+      </section>
+
+      <section class="memory-card">
+        <div class="memory-card-head">
+          <div><strong>Project Files</strong><div class="memory-muted">File/code được thu thập từ các chat cùng project</div></div>
+          <button id="memory-refresh-btn" class="memory-ghost-btn" type="button">Refresh</button>
+        </div>
+        <div id="memory-files-list" class="memory-list"><div class="memory-muted">Chưa có dữ liệu.</div></div>
+        <pre id="memory-file-preview" class="memory-preview" hidden></pre>
+      </section>
+
+      <section class="memory-card">
+        <div class="memory-card-head"><div><strong>Rules & Decisions</strong><div class="memory-muted">Constraint từ user có authority cao hơn retrieved prose</div></div></div>
+        <div id="memory-decisions-list" class="memory-list"><div class="memory-muted">Chưa có quyết định.</div></div>
+      </section>
+
+      <section class="memory-danger-zone">
+        <button id="memory-clear-btn" class="memory-danger-btn" type="button">Xóa dữ liệu Memory đã index của project</button>
+      </section>
+    </main>
+
+    <main id="runtime-view" class="runtime-view" style="display:none;">
+      <section class="runtime-overview">
+        <div class="runtime-overview-head">
+          <div>
+            <div class="runtime-eyebrow">RUNTIME</div>
+            <h2>Tự động giữ các chat ổn định</h2>
+            <div id="runtime-system-summary" class="runtime-muted">Đang đọc trạng thái các chat…</div>
+          </div>
+          <span id="runtime-pressure" class="runtime-system-pill unknown">Đang đọc</span>
+        </div>
+
+        <div class="runtime-metrics" aria-label="Runtime summary">
+          <div class="runtime-metric"><strong id="runtime-open-count">0</strong><span>đang mở</span></div>
+          <div class="runtime-metric"><strong id="runtime-generating-count">0</strong><span>đang trả lời</span></div>
+          <div class="runtime-metric"><strong id="runtime-idle-count">0</strong><span>nhàn rỗi</span></div>
+          <div class="runtime-metric"><strong id="runtime-sleeping-count">0</strong><span>đang ngủ</span></div>
+        </div>
+      </section>
+
+      <section class="runtime-card runtime-automation-card">
+        <div class="runtime-card-head">
+          <div>
+            <strong>Tự động hóa</strong>
+            <div class="runtime-muted">Runtime tự điều phối tài nguyên; safety luôn được ưu tiên.</div>
+          </div>
+        </div>
+
+        <div class="runtime-setting-row">
+          <div class="runtime-setting-copy">
+            <strong>Tự động điều phối</strong>
+            <span>Tự cân bằng chat active, generating và background.</span>
+          </div>
+          <label class="runtime-switch" aria-label="Tự động điều phối">
+            <input id="runtime-coop-toggle" type="checkbox" checked>
+            <span></span>
+          </label>
+        </div>
+
+        <div class="runtime-setting-row">
+          <div class="runtime-setting-copy">
+            <strong>Bảo vệ chat đang làm việc</strong>
+            <span>Chat đang gõ hoặc đang trả lời không bao giờ bị sleep tự động.</span>
+          </div>
+          <span class="runtime-locked">Luôn bật</span>
+        </div>
+
+        <div class="runtime-setting-row">
+          <div class="runtime-setting-copy">
+            <strong>Tự cho chat idle ngủ</strong>
+            <span>Chỉ áp dụng chat nền đã idle đủ lâu và vượt qua live safety probe.</span>
+          </div>
+          <label class="runtime-switch" aria-label="Tự cho chat idle ngủ">
+            <input id="runtime-auto-sleep-toggle" type="checkbox" checked>
+            <span></span>
+          </label>
+        </div>
+
+        <div class="runtime-inline-settings">
+          <label class="runtime-field">
+            <span>Idle sau</span>
+            <select id="runtime-idle-minutes" class="runtime-select" aria-label="Thời gian idle trước khi ngủ">
+              <option value="2">2 phút</option>
+              <option value="5" selected>5 phút</option>
+              <option value="10">10 phút</option>
+              <option value="20">20 phút</option>
+              <option value="30">30 phút</option>
+            </select>
+          </label>
+          <label class="runtime-field">
+            <span>Tối đa trả lời đồng thời</span>
+            <select id="runtime-parallel-select" class="runtime-select" aria-label="Giới hạn generation đồng thời">
+              <option value="1">1 chat</option>
+              <option value="2" selected>2 chat</option>
+              <option value="3">3 chat</option>
+              <option value="4">4 chat</option>
+              <option value="6">6 chat</option>
+              <option value="8">8 chat</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="runtime-budget-line">
+          <span id="runtime-budget-sub">Runtime đang tính mức song song an toàn…</span>
+          <button id="runtime-optimize-btn" class="runtime-small-btn primary" type="button">Tối ưu chat nền ngay</button>
+        </div>
+      </section>
+
+      <section class="runtime-card runtime-project-card">
+        <div class="runtime-card-head">
+          <div>
+            <strong>Project chung cho các chat</strong>
+            <div class="runtime-muted">Gắn cùng project để Memory/RAG chia sẻ context giữa các conversation.</div>
+          </div>
+        </div>
+        <div class="runtime-project-row">
+          <select id="runtime-project-select" class="runtime-select" aria-label="Project dùng chung"></select>
+          <button id="runtime-start-btn" class="runtime-small-btn primary" type="button">Gắn cho tất cả</button>
+        </div>
+      </section>
+
+      <section class="runtime-card runtime-chat-card">
+        <div class="runtime-card-head">
+          <div>
+            <strong>Các chat</strong>
+            <div id="runtime-pressure-sub" class="runtime-muted">Runtime sẽ chỉ hiển thị trạng thái có ích cho việc điều khiển.</div>
+          </div>
+          <span id="runtime-live-summary" class="runtime-live-count">0 chat</span>
+        </div>
+        <div id="runtime-generators" class="runtime-protection-summary">0 đang trả lời · 0 được bảo vệ</div>
+        <div id="runtime-agents" class="runtime-agent-list"><div class="runtime-empty">Đang đồng bộ runtime…</div></div>
+      </section>
+    </main>
+
+    <div id="toast" class="toast" role="status" aria-live="polite">Đã thực hiện xong</div>
+  </div>
+
+  <script type="module" src="sidepanel-controller.js"></script>
+  <script type="module" src="sidepanel-memory.js"></script>
+  <script type="module" src="sidepanel-runtime.js"></script>
+</body>
+</html>

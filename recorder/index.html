@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TabFlow Recorder</title>
+  <link rel="stylesheet" href="recorder.css">
+</head>
+<body>
+  <div class="studio-shell">
+    <header class="studio-header">
+      <div class="brand-row">
+        <div class="brand-mark">⚡</div>
+        <div>
+          <div class="eyebrow">TABFLOW CAPTURE STUDIO</div>
+          <h1>Quay & chụp màn hình</h1>
+        </div>
+      </div>
+      <div class="header-status">
+        <span class="privacy-pill">Local-only</span>
+        <span id="recorder-state-pill" class="state-pill idle">Sẵn sàng</span>
+      </div>
+    </header>
+
+    <main class="studio-grid">
+      <section class="preview-panel">
+        <div class="preview-stage">
+          <video id="preview" muted autoplay playsinline></video>
+          <div id="preview-empty" class="preview-empty">
+            <div class="preview-empty-icon">◉</div>
+            <strong>Chưa chọn nguồn quay</strong>
+            <span>Bấm “Bắt đầu quay” để quay, hoặc “Chụp PNG” để chụp riêng một màn hình/cửa sổ/tab.</span>
+          </div>
+          <div class="recording-hud">
+            <span id="recording-dot" class="recording-dot"></span>
+            <strong id="recording-timer">00:00</strong>
+            <span id="recording-size">0 B</span>
+          </div>
+        </div>
+
+        <div class="capture-status-grid">
+          <div class="capture-stat"><span>Nguồn</span><strong id="actual-resolution">—</strong></div>
+          <div class="capture-stat"><span>FPS</span><strong id="actual-fps">—</strong></div>
+          <div class="capture-stat"><span>Video</span><strong id="actual-format">—</strong></div>
+          <div class="capture-stat"><span>Audio</span><strong id="actual-audio">—</strong></div>
+        </div>
+
+        <div id="resolution-note" class="info-line">4K chỉ được giữ khi nguồn thật đủ 3840×2160; TabFlow không upscale giả.</div>
+
+        <div class="transport-row">
+          <button id="btn-start" class="btn primary" type="button">● Bắt đầu quay</button>
+          <button id="btn-pause" class="btn" type="button" disabled>Ⅱ Tạm dừng</button>
+          <button id="btn-stop" class="btn danger" type="button" disabled>■ Dừng</button>
+          <button id="btn-screenshot" class="btn" type="button">▣ Chụp PNG</button>
+        </div>
+      </section>
+
+      <aside class="settings-panel">
+        <section class="settings-card social-card">
+          <div class="section-head">
+            <div>
+              <div class="eyebrow">MỤC ĐÍCH XUẤT</div>
+              <h2>Master hay đăng mạng xã hội</h2>
+            </div>
+            <span class="mini-pill social-pill">X / Facebook</span>
+          </div>
+          <label class="field">
+            <span>Preset</span>
+            <select id="publish-profile-select">
+              <option value="master" selected>Master · giữ 4K/60 FPS khi nguồn hỗ trợ</option>
+              <option value="social">Social Ready · Facebook + X · 1080p30 H.264/AAC</option>
+              <option value="x-free">X Free · Social Ready + tự dừng ở 2:19</option>
+            </select>
+          </label>
+          <div id="publish-profile-note" class="hint">Master giữ toàn quyền 4K/60 FPS. Nếu đăng X/Facebook, dùng Social Ready để tránh codec/FPS/resolution khó xử lý.</div>
+          <div id="social-compatibility" class="social-compatibility" data-state="neutral">Social check sẽ xuất hiện sau khi quay.</div>
+        </section>
+
+        <section class="settings-card">
+          <div class="section-head">
+            <div>
+              <div class="eyebrow">CHẤT LƯỢNG</div>
+              <h2>Video</h2>
+            </div>
+            <span id="codec-health" class="mini-pill">Đang kiểm tra</span>
+          </div>
+
+          <label class="field">
+            <span>Độ phân giải mục tiêu</span>
+            <select id="quality-select">
+              <option value="4k" selected>4K UHD · tối đa 3840×2160</option>
+              <option value="1440p">1440p · tối đa 2560×1440</option>
+              <option value="1080p">1080p · tối đa 1920×1080</option>
+              <option value="native">Native · giữ nguồn gốc</option>
+            </select>
+          </label>
+
+          <div class="field-grid">
+            <label class="field">
+              <span>Khung hình</span>
+              <select id="fps-select">
+                <option value="30" selected>30 FPS</option>
+                <option value="60">60 FPS</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Định dạng</span>
+              <select id="format-select">
+                <option value="auto" selected>Auto · MP4 ưu tiên</option>
+                <option value="mp4">MP4</option>
+                <option value="webm">WebM</option>
+              </select>
+            </label>
+          </div>
+
+          <div id="bitrate-hint" class="hint">Bitrate sẽ tự tính theo độ phân giải thực tế và FPS.</div>
+        </section>
+
+        <section class="settings-card">
+          <div class="section-head">
+            <div>
+              <div class="eyebrow">ÂM THANH</div>
+              <h2>Nguồn audio</h2>
+            </div>
+          </div>
+
+          <label class="toggle-row">
+            <span><strong>Âm thanh hệ thống</strong><small>Tùy nguồn/OS, Chrome có thể không cung cấp track audio.</small></span>
+            <input id="system-audio-toggle" type="checkbox" checked>
+          </label>
+          <label class="toggle-row">
+            <span><strong>Microphone</strong><small>Nếu bật, TabFlow mix mic với audio của nguồn quay.</small></span>
+            <input id="mic-toggle" type="checkbox">
+          </label>
+        </section>
+
+        <section class="settings-card">
+          <div class="section-head">
+            <div>
+              <div class="eyebrow">LƯU VIDEO</div>
+              <h2>4K an toàn cho RAM</h2>
+            </div>
+          </div>
+          <p class="card-copy">Quay 4K dài nên ghi chunk trực tiếp xuống file thay vì giữ toàn bộ video trong RAM.</p>
+          <button id="btn-pick-file" class="btn wide" type="button">Chọn file lưu trực tiếp</button>
+          <div id="save-target" class="save-target">Chưa chọn · sau khi dừng có thể tải video từ trình duyệt.</div>
+        </section>
+
+        <section id="result-card" class="settings-card result-card" hidden>
+          <div class="section-head">
+            <div>
+              <div class="eyebrow">BẢN GHI</div>
+              <h2 id="result-name">Video đã sẵn sàng</h2>
+            </div>
+          </div>
+          <div id="result-meta" class="result-meta"></div>
+          <div class="result-actions">
+            <button id="btn-download" class="btn primary" type="button">↓ Tải video</button>
+            <button id="btn-show-download" class="btn" type="button" hidden>Hiện trong thư mục</button>
+          </div>
+        </section>
+
+        <section class="settings-card">
+          <div class="section-head">
+            <div>
+              <div class="eyebrow">VIDEO GẦN ĐÂY</div>
+              <h2>Đã tải bằng TabFlow</h2>
+            </div>
+            <button id="btn-refresh-downloads" class="icon-button" type="button" title="Làm mới">↻</button>
+          </div>
+          <div id="recent-downloads" class="recent-list"><div class="recent-empty">Chưa có video tải gần đây.</div></div>
+        </section>
+      </aside>
+    </main>
+
+    <footer class="studio-footer">
+      <span id="status-message">Dữ liệu quay ở máy của bạn; TabFlow không upload video.</span>
+      <span>Tip: X web thường cần cấu hình thấp hơn Master 4K; Social Ready khóa 1080p30 MP4 H.264/AAC.</span>
+    </footer>
+  </div>
+  <canvas id="capture-canvas" hidden></canvas>
+  <script type="module" src="recorder.js"></script>
+  <script type="module" src="screenshot-controller.js"></script>
+  <script type="module" src="social-controller.js"></script>
+</body>
+</html>

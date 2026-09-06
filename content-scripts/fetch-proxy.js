@@ -56,7 +56,6 @@
       const currentNodeId = data.current_node;
       if (!mapping[currentNodeId]) return data;
 
-      // 1. Identify root node (parent: null)
       let rootNodeId = null;
       let systemNodeId = null;
       for (const [id, node] of Object.entries(mapping)) {
@@ -67,7 +66,6 @@
       }
       if (!rootNodeId || !mapping[rootNodeId]) return data;
 
-      // Check if root has a system message child
       for (const childId of (mapping[rootNodeId].children || [])) {
         const child = mapping[childId];
         if (child?.message?.author?.role === 'system') {
@@ -76,7 +74,6 @@
         }
       }
 
-      // 2. Traverse backwards from current_node along the active path
       const activePath = [];
       let curr = currentNodeId;
       const visited = new Set();
@@ -86,7 +83,6 @@
         curr = mapping[curr].parent;
       }
 
-      // 3. Count user turns from newest to oldest
       let turnCount = 0;
       let cutoffIndex = activePath.length - 1;
 
@@ -98,31 +94,24 @@
         if (role === 'user') {
           turnCount++;
           if (turnCount >= limit) {
-            cutoffIndex = i; // keep up to and including this user prompt
+            cutoffIndex = i;
             break;
           }
         }
       }
 
-      // If conversation is already short enough, return unchanged
       if (turnCount < limit && cutoffIndex === activePath.length - 1) {
         return data;
       }
 
-      // 4. Assemble retained node IDs
       const keptNodeIds = new Set(activePath.slice(0, cutoffIndex + 1));
       const oldestKeptId = activePath[cutoffIndex];
 
-      // Always keep root and system nodes
       keptNodeIds.add(rootNodeId);
-      if (systemNodeId && mapping[systemNodeId]) {
-        keptNodeIds.add(systemNodeId);
-      }
+      if (systemNodeId && mapping[systemNodeId]) keptNodeIds.add(systemNodeId);
 
-      // Attach point: link oldest retained node to system node (or root if no system node)
       const attachTargetId = (systemNodeId && mapping[systemNodeId]) ? systemNodeId : rootNodeId;
 
-      // 5. Clone and sanitize mapping
       const prunedMapping = {};
       for (const id of keptNodeIds) {
         const orig = mapping[id];
@@ -134,26 +123,20 @@
         };
       }
 
-      // Re-link tree
       prunedMapping[oldestKeptId].parent = attachTargetId;
       prunedMapping[attachTargetId].children = [oldestKeptId];
 
-      // 6. SANITIZE ALL CHILDREN POINTERS: remove any pruned node references
-      for (const [id, node] of Object.entries(prunedMapping)) {
+      for (const node of Object.values(prunedMapping)) {
         node.children = (node.children || []).filter(childId => keptNodeIds.has(childId));
       }
 
-      // 7. Calculate token stats for booster HUD
       let totalChars = 0;
       for (const id of keptNodeIds) {
         const parts = prunedMapping[id]?.message?.content?.parts;
         if (Array.isArray(parts)) {
           for (const part of parts) {
-            if (typeof part === 'string') {
-              totalChars += part.length;
-            } else if (typeof part === 'object' && part?.text) {
-              totalChars += part.text.length;
-            }
+            if (typeof part === 'string') totalChars += part.length;
+            else if (typeof part === 'object' && part?.text) totalChars += part.text.length;
           }
         }
       }
@@ -173,17 +156,13 @@
         }, '*');
       }
 
-      return {
-        ...data,
-        mapping: prunedMapping
-      };
+      return { ...data, mapping: prunedMapping };
     } catch (err) {
       console.warn('[TabFlow Proxy] Prune pass-through on error:', err);
       return data;
     }
   }
 
-  // Intercept window.fetch in Main World
   if (typeof window !== 'undefined') {
     const originalFetch = window.fetch;
     const telemetryDomains = ['datadog', 'statsig', 'sentry', 'segment.io', 'segment.com'];
@@ -191,34 +170,32 @@
     window.fetch = async function (...args) {
       const resource = args[0];
       const url = typeof resource === 'string' ? resource : (resource?.url || '');
+      const method = (args[1]?.method || (typeof resource === 'object' ? resource?.method : 'GET') || 'GET').toUpperCase();
+      // Never replay a request that can mutate ChatGPT state. GET/HEAD are the
+      // only methods this proxy may retry automatically. This keeps the loader
+      // fail-safe even if ChatGPT changes submit endpoints or retry semantics.
+      const retrySafe = method === 'GET' || method === 'HEAD';
 
-      // 1. Silent Telemetry Blocker
       if (isTelemetryBlocked() && typeof url === 'string') {
         const isTelemetry = telemetryDomains.some(domain => url.includes(domain));
-        if (isTelemetry) {
-          return new Response(null, { status: 204 });
-        }
+        if (isTelemetry) return new Response(null, { status: 204 });
       }
 
-      // 2. Filter for conversation tree GET request
       const isConversationReq = typeof url === 'string' &&
         url.includes('/backend-api/conversation/') &&
         !url.endsWith('/backend-api/conversation') &&
         !url.includes('/interpreter/') &&
         !url.includes('/prepare');
 
-      const method = (args[1]?.method || (typeof resource === 'object' ? resource?.method : 'GET') || 'GET').toUpperCase();
-
       let attempt = 0;
-      const maxRetries = 3;
+      const maxRetries = retrySafe ? 3 : 0;
       const delays = [1500, 3000, 6000];
 
       while (attempt <= maxRetries) {
         try {
           const response = await originalFetch.apply(this, args);
 
-          // HTTP 429 Too Many Requests Auto-Retry with Backoff
-          if (response.status === 429 && attempt < maxRetries) {
+          if (retrySafe && response.status === 429 && attempt < maxRetries) {
             if (window.postMessage) {
               window.postMessage({
                 type: 'TABFLOW_RETRY_STATUS',
@@ -232,16 +209,13 @@
             continue;
           }
 
-          // Only prune GET conversation tree loads
           if (isConversationReq && method === 'GET' && isTrimEnabled() && response.ok) {
             try {
               const clone = response.clone();
               const json = await clone.json();
 
               if (json && json.mapping && json.current_node) {
-                const limit = getMessageLimit();
-                const pruned = pruneConversationData(json, limit);
-
+                const pruned = pruneConversationData(json, getMessageLimit());
                 return new Response(JSON.stringify(pruned), {
                   status: response.status,
                   statusText: response.statusText,
@@ -256,23 +230,20 @@
 
           return response;
         } catch (err) {
-          if (attempt >= maxRetries) throw err;
+          if (!retrySafe || attempt >= maxRetries) throw err;
           attempt++;
           await new Promise(resolve => setTimeout(resolve, delays[attempt - 1] || 1500));
         }
       }
     };
 
-    // Listen to control events from settings/HUD
     window.addEventListener('message', (e) => {
       if (!e.data || !e.data.type) return;
 
       if (e.data.type === 'TABFLOW_SET_TRIM') {
         try {
           localStorage.setItem('tabflow_trim_enabled', e.data.enabled ? 'true' : 'false');
-          if (e.data.limit) {
-            localStorage.setItem('tabflow_trim_limit', String(e.data.limit));
-          }
+          if (e.data.limit) localStorage.setItem('tabflow_trim_limit', String(e.data.limit));
         } catch {}
       }
       if (e.data.type === 'TABFLOW_SET_TELEMETRY') {

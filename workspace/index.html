@@ -3,92 +3,115 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ChatGPT Multi-Chat Coding Hub — TabFlow</title>
+  <title>TabFlow Unified Chat Workspace</title>
   <link rel="stylesheet" href="workspace.css">
+  <link rel="stylesheet" href="spotlight-resize.css">
 </head>
 <body>
-  <!-- Top Navigation -->
   <header class="top-nav">
     <div class="nav-brand">
-      <div class="nav-logo">⚡</div>
-      <div class="nav-title">
-        Multi-Chat Coding Hub
-        <span class="tag-badge">IDE Mode</span>
-      </div>
+      <div class="nav-logo" aria-hidden="true">⚡</div>
+      <div class="nav-title">TabFlow Workspace <span class="tag-badge">v3.2</span></div>
+      <div class="nav-divider" aria-hidden="true"></div>
+      <div id="workspace-summary" class="nav-context">Đang thiết lập secure workspace…</div>
     </div>
 
-    <!-- Layout Switcher Controls -->
     <div class="nav-controls">
-      <div class="layout-btn-group">
-        <button id="btn-layout-2" class="layout-btn active" title="Chia 2 cột song song (Frontend / Backend)">
-          <span>⬛⬛</span> 2 Cột
-        </button>
-        <button id="btn-layout-3" class="layout-btn" title="Chia 3 cột song song">
-          <span>⬛⬛⬛</span> 3 Cột
-        </button>
-        <button id="btn-layout-4" class="layout-btn" title="Lưới 4 khung chat (2x2)">
-          <span>⊞</span> 4 Ô Lưới
-        </button>
-      </div>
-
-      <button id="btn-add-pane" class="btn-nav-action" title="Thêm một khung ChatGPT mới">
-        <span>➕</span> Thêm Chat
+      <button id="btn-sync-tabs" class="command-btn primary" type="button" title="Đồng bộ các tab ChatGPT đang mở">
+        <span aria-hidden="true">↻</span><span class="command-label">Sync</span>
       </button>
-
-      <button id="btn-tile-windows" class="btn-nav-action" title="Chia 2 cửa sổ Chrome thật 50/50 trên màn hình">
-        <span>🪟</span> Tile Windows
+      <button id="btn-new-chat" class="command-btn" type="button" title="Thêm một ChatGPT pane mới">
+        <span aria-hidden="true">＋</span><span class="command-label">Chat</span>
       </button>
-    </div>
-
-    <!-- Right Controls -->
-    <div class="nav-actions">
-      <button id="btn-toggle-scratchpad" class="btn-nav-action primary" title="Mở/Đóng trình soạn thảo Code tích hợp">
-        <span>📝</span> Code Scratchpad
+      <button id="btn-focus-primary" class="command-btn" type="button" title="Phóng to pane chính (F)">
+        <span aria-hidden="true">⛶</span><span class="command-label">Focus</span>
       </button>
+      <button id="btn-takeover" class="command-btn takeover" type="button" title="Ngủ đông tab gốc sau khi pane đã tải để tránh render trùng">
+        <span aria-hidden="true">⚡</span><span class="command-label">Take over</span>
+      </button>
+      <label class="density-control" for="density-select">
+        <span>Layout</span>
+        <select id="density-select" aria-label="Kiểu bố trí workspace">
+          <option value="auto">Auto</option>
+          <option value="spotlight">Spotlight</option>
+          <option value="overview">Overview</option>
+          <option value="2">2 cột</option>
+          <option value="3">3 cột</option>
+          <option value="4">4 cột</option>
+        </select>
+      </label>
     </div>
   </header>
 
-  <!-- Workspace Container -->
-  <div class="workspace-container">
-    <!-- Chat Grid (Holds 2 to 4 ChatGPT Panes) -->
-    <main id="chat-grid" class="chat-grid layout-2-col">
-      <!-- Panes will be injected dynamically by workspace.js -->
-    </main>
+  <main id="chat-grid" class="chat-grid" aria-label="Các cuộc chat trong workspace">
+    <div
+      id="spotlight-separator"
+      class="spotlight-separator"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Thay đổi độ rộng pane chính"
+      aria-valuemin="48"
+      aria-valuemax="78"
+      aria-valuenow="64"
+      tabindex="-1"
+      hidden
+    ><span class="spotlight-separator-grip" aria-hidden="true"></span></div>
+  </main>
 
-    <!-- Integrated Code Scratchpad (IDE Sidebar) -->
-    <aside id="scratchpad-panel" class="scratchpad-panel">
-      <!-- File Tabs Bar -->
-      <div class="scratchpad-header">
-        <div id="file-tabs-bar" class="file-tabs-bar">
-          <!-- Dynamically generated file tabs -->
+  <section id="empty-state" class="empty-state" hidden>
+    <div class="empty-icon">🧩</div>
+    <h1>Chưa có ChatGPT tab nào</h1>
+    <p>Mở một hoặc nhiều cuộc chat rồi bấm Sync, hoặc tạo chat mới ngay trong workspace.</p>
+    <button id="btn-empty-new-chat" class="command-btn primary" type="button">＋ Tạo Chat đầu tiên</button>
+  </section>
+
+  <footer class="status-bar" aria-live="polite">
+    <div class="status-group">
+      <span class="status-item"><strong id="stat-panes">0</strong> chat</span>
+      <span class="status-separator">·</span>
+      <span class="status-item"><strong id="stat-sources">0</strong> tab gốc</span>
+      <span class="status-separator">·</span>
+      <span class="status-item"><strong id="stat-sleeping">0</strong> ngủ</span>
+      <span class="status-separator">·</span>
+      <span class="status-item"><strong id="stat-ready">0</strong> ready</span>
+    </div>
+    <div id="status-primary" class="status-primary">Main: —</div>
+    <div id="density-warning" class="density-warning"></div>
+    <div class="shortcut-hint"><kbd>F</kbd> Focus <kbd>Esc</kbd> Overview</div>
+  </footer>
+
+  <div id="workspace-toast" class="workspace-toast" role="status"></div>
+
+  <template id="pane-template">
+    <section class="chat-pane">
+      <header class="pane-header">
+        <div class="pane-ident">
+          <span class="pane-status-dot" aria-hidden="true"></span>
+          <span class="pane-index"></span>
+          <div class="pane-title-wrap">
+            <div class="pane-title-row">
+              <div class="pane-title"></div>
+              <span class="pane-main-badge" hidden>MAIN</span>
+            </div>
+            <div class="pane-meta"></div>
+          </div>
         </div>
-        <button id="btn-new-file" class="btn-add-file" title="Tạo file code mới">➕ File</button>
-      </div>
-
-      <!-- Editor Action Toolbar -->
-      <div class="editor-toolbar">
-        <div class="editor-actions-left">
-          <button id="btn-copy-code" class="editor-btn" title="Sao chép toàn bộ code trong file này">📋 Copy</button>
-          <button id="btn-download-code" class="editor-btn" title="Tải file code này về máy tính">💾 Tải về</button>
-          <button id="btn-clear-code" class="editor-btn" title="Xóa trắng nội dung file">🧹 Xóa</button>
+        <div class="pane-tools">
+          <button class="pane-btn btn-primary-pane" type="button" title="Đặt làm pane chính">☆</button>
+          <button class="pane-btn btn-focus" type="button" title="Phóng to pane">⛶</button>
+          <button class="pane-btn pane-secondary-action btn-composer" type="button" title="Đưa con trỏ vào ô nhập">⌨</button>
+          <button class="pane-btn pane-secondary-action btn-reload" type="button" title="Tải lại pane">↻</button>
+          <button class="pane-btn pane-secondary-action btn-source" type="button" title="Mở tab gốc">↗</button>
+          <button class="pane-btn danger btn-remove" type="button" title="Bỏ pane khỏi workspace">×</button>
         </div>
-        <div class="editor-actions-right">
-          <button id="btn-send-to-pane-1" class="editor-btn highlight" title="Gửi code này vào khung Chat 1">📤 Gửi Chat 1</button>
-          <button id="btn-send-to-pane-2" class="editor-btn highlight" title="Gửi code này vào khung Chat 2">📤 Gửi Chat 2</button>
-        </div>
+      </header>
+      <div class="pane-body">
+        <div class="pane-loading"><span class="spinner"></span><span>Đang tải ChatGPT…</span></div>
+        <iframe name="tabflow-workspace-pane" allow="clipboard-read; clipboard-write" referrerpolicy="strict-origin-when-cross-origin"></iframe>
       </div>
+    </section>
+  </template>
 
-      <!-- Main Editor Area -->
-      <div class="editor-main">
-        <div id="line-numbers" class="line-numbers">1</div>
-        <textarea id="code-textarea" class="code-textarea" spellcheck="false" placeholder="// Viết hoặc dán code của bạn tại đây...&#10;// Nhấn Tab để thụt lề chuẩn, phím tắt Ctrl + S để lưu."></textarea>
-      </div>
-    </aside>
-  </div>
-
-  <!-- Toast Message -->
-  <div id="workspace-toast" class="workspace-toast">Đã thực hiện xong</div>
-
-  <script src="workspace.js"></script>
+  <script type="module" src="frame-policy-bootstrap.js"></script>
 </body>
 </html>
