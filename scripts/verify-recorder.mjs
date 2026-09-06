@@ -7,6 +7,7 @@ const html = read('recorder/index.html');
 const core = read('recorder/core.js');
 const recorder = read('recorder/recorder.js');
 const sidepanel = read('v3/sidepanel.html');
+const sidepanelController = read('v3/sidepanel-controller.js');
 
 function check(condition, message) {
   if (!condition) throw new Error(message);
@@ -17,6 +18,7 @@ console.log('🎥 Verifying TabFlow Recorder...');
 
 check(manifest.permissions.includes('downloads'), 'downloads permission declared for video/screenshot export');
 check(sidepanel.includes('id="btn-open-recorder"'), 'Control Center exposes Recorder entry point');
+check(sidepanelController.includes("chrome.runtime.getURL('recorder/index.html')"), 'Control Center recorder action opens the extension Capture Studio');
 check(html.includes('id="quality-select"') && html.includes('value="4k"'), 'Recorder UI exposes 4K preset');
 check(html.includes('id="fps-select"') && html.includes('value="60"'), 'Recorder UI exposes 60 FPS option');
 check(html.includes('id="system-audio-toggle"') && html.includes('id="mic-toggle"'), 'Recorder UI exposes system audio and microphone controls');
