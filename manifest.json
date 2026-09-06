@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "name": "ChatGPT TabFlow — Cognitive Developer OS",
   "version": "3.2.0",
-  "minimum_chrome_version": "109",
-  "description": "Local-first cognitive and performance layer for ChatGPT: persistent project memory, adaptive N-tab runtime, RAG, unified multi-chat workspace, safe tab hibernation and Code Vault.",
+  "minimum_chrome_version": "116",
+  "description": "Local-first cognitive and performance layer for ChatGPT: persistent project memory, adaptive N-tab runtime, RAG, unified multi-chat workspace, safe tab hibernation and Capture Studio.",
   "icons": {
     "16": "icons/icon-16.png",
     "48": "icons/icon-48.png",
@@ -107,14 +107,14 @@
         "default": "Alt+C",
         "mac": "Alt+C"
       },
-      "description": "Mở ChatGPT TabFlow Side Panel"
+      "description": "Mở ChatGPT TabFlow Control Center"
     },
     "freeze-background-tabs": {
       "suggested_key": {
         "default": "Alt+F",
         "mac": "Alt+F"
       },
-      "description": "Đóng băng các tab ChatGPT nền đang thực sự nhàn rỗi"
+      "description": "Cho các tab ChatGPT nền thực sự nhàn rỗi ngủ"
     }
   }
 }
