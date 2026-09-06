@@ -56,6 +56,26 @@
       </section>
 
       <aside class="settings-panel">
+        <section class="settings-card social-card">
+          <div class="section-head">
+            <div>
+              <div class="eyebrow">MỤC ĐÍCH XUẤT</div>
+              <h2>Master hay đăng mạng xã hội</h2>
+            </div>
+            <span class="mini-pill social-pill">X / Facebook</span>
+          </div>
+          <label class="field">
+            <span>Preset</span>
+            <select id="publish-profile-select">
+              <option value="master" selected>Master · giữ 4K/60 FPS khi nguồn hỗ trợ</option>
+              <option value="social">Social Ready · Facebook + X · 1080p30 H.264/AAC</option>
+              <option value="x-free">X Free · Social Ready + tự dừng ở 2:19</option>
+            </select>
+          </label>
+          <div id="publish-profile-note" class="hint">Master giữ toàn quyền 4K/60 FPS. Nếu đăng X/Facebook, dùng Social Ready để tránh codec/FPS/resolution khó xử lý.</div>
+          <div id="social-compatibility" class="social-compatibility" data-state="neutral">Social check sẽ xuất hiện sau khi quay.</div>
+        </section>
+
         <section class="settings-card">
           <div class="section-head">
             <div>
@@ -155,11 +175,12 @@
 
     <footer class="studio-footer">
       <span id="status-message">Dữ liệu quay ở máy của bạn; TabFlow không upload video.</span>
-      <span>Tip: 4K60 cần GPU/CPU và băng thông ghi file cao hơn 4K30.</span>
+      <span>Tip: X web thường cần cấu hình thấp hơn Master 4K; Social Ready khóa 1080p30 MP4 H.264/AAC.</span>
     </footer>
   </div>
   <canvas id="capture-canvas" hidden></canvas>
   <script type="module" src="recorder.js"></script>
   <script type="module" src="screenshot-controller.js"></script>
+  <script type="module" src="social-controller.js"></script>
 </body>
 </html>
