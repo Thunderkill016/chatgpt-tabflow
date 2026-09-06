@@ -12,6 +12,7 @@ const zipPath = path.join(distRoot, `tabflow-v${version}.zip`);
 
 const runtimeEntries = [
   'manifest.json',
+  'LICENSE',
   'service-worker.js',
   'icons',
   'popup',
@@ -39,6 +40,7 @@ for (const rel of runtimeEntries) {
 
 const stagedManifest = JSON.parse(fs.readFileSync(path.join(stage, 'manifest.json'), 'utf8'));
 if (stagedManifest.version !== version) throw new Error('Staged manifest version mismatch');
+if (!fs.existsSync(path.join(stage, 'LICENSE'))) throw new Error('LICENSE missing from release package');
 if (fs.existsSync(path.join(stage, 'rules', 'rules.json'))) throw new Error('Legacy static DNR rules leaked into release package');
 
 const zip = spawnSync('zip', ['-qr', zipPath, '.'], { cwd: stage, encoding: 'utf8' });
