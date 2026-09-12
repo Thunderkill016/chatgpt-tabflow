@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ChatGPT TabFlow Workspace</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="control-center.css">
 </head>
 <body>
   <div class="container">
@@ -36,6 +37,34 @@
         <span class="stat-label">TAB CHATGPT</span>
         <span id="stat-total-tabs" class="stat-value">0 tabs</span>
         <span id="stat-sleeping-tabs" class="stat-sub">0 đang ngủ đông</span>
+      </div>
+    </section>
+
+    <!-- CycleWarden read-only companion -->
+    <section id="control-center-companion" class="control-center-companion" data-state="locked">
+      <div class="control-center-header">
+        <span class="control-center-title">🛰️ AI Project Control</span>
+        <span id="cc-status" class="control-center-status">Chưa kết nối</span>
+      </div>
+      <div class="control-center-metrics" aria-label="Trạng thái Control Center">
+        <div class="control-center-metric">
+          <strong id="cc-needs">–</strong>
+          <span>Needs You</span>
+        </div>
+        <div class="control-center-metric">
+          <strong id="cc-flight">–</strong>
+          <span>In Flight</span>
+        </div>
+        <div class="control-center-metric">
+          <strong id="cc-ready">–</strong>
+          <span>Ready</span>
+        </div>
+      </div>
+      <p id="cc-message" class="control-center-message">Cho phép TabFlow đọc trạng thái Control Core local khi bạn cần.</p>
+      <div class="control-center-actions">
+        <button id="cc-connect" class="btn-secondary">🔐 Connect local core</button>
+        <button id="cc-open" class="btn-secondary cc-open">Mở Control Center</button>
+        <button id="cc-refresh" class="btn-secondary cc-refresh" title="Làm mới trạng thái Control Core">↻</button>
       </div>
     </section>
 
@@ -102,6 +131,7 @@
     <div id="toast" class="toast">Đã thực hiện xong</div>
   </div>
 
+  <script src="control-center.js"></script>
   <script src="index.js"></script>
 </body>
 </html>
