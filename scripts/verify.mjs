@@ -40,6 +40,18 @@ try {
   check(manifest.permissions && manifest.permissions.includes('sidePanel'), 'Declares sidePanel permission');
   check(manifest.permissions && manifest.permissions.includes('storage'), 'Declares storage permission');
   check(manifest.permissions && manifest.permissions.includes('tabGroups'), 'Declares tabGroups permission');
+  check(
+    Array.isArray(manifest.optional_host_permissions) && manifest.optional_host_permissions.includes('http://127.0.0.1/*'),
+    'Control Core localhost access is optional and user-granted'
+  );
+  check(
+    !Array.isArray(manifest.host_permissions) || !manifest.host_permissions.some((origin) => origin.includes('127.0.0.1')),
+    'Control Core localhost access is not a mandatory host permission'
+  );
+  check(
+    !Array.isArray(manifest.optional_host_permissions) || !manifest.optional_host_permissions.includes('http://*/*'),
+    'Control Core permission does not widen to every HTTP host'
+  );
 } catch (e) {
   check(false, `manifest.json is valid JSON: ${e.message}`);
 }
@@ -58,9 +70,21 @@ if (manifest.icons) {
 const sidePanelHtml = path.join(rootDir, 'sidepanel', 'index.html');
 const sidePanelJs = path.join(rootDir, 'sidepanel', 'index.js');
 const sidePanelCss = path.join(rootDir, 'sidepanel', 'style.css');
+const controlCenterJs = path.join(rootDir, 'sidepanel', 'control-center.js');
+const controlCenterCss = path.join(rootDir, 'sidepanel', 'control-center.css');
 check(fs.existsSync(sidePanelHtml), 'Side panel HTML exists');
 check(fs.existsSync(sidePanelJs), 'Side panel JS exists');
 check(fs.existsSync(sidePanelCss), 'Side panel CSS exists');
+check(fs.existsSync(controlCenterJs), 'Control Center companion JS exists');
+check(fs.existsSync(controlCenterCss), 'Control Center companion CSS exists');
+
+if (fs.existsSync(controlCenterJs)) {
+  const source = fs.readFileSync(controlCenterJs, 'utf8');
+  check(source.includes("http://127.0.0.1:4318"), 'Control Center companion targets the fixed loopback core port');
+  check(source.includes('chrome.permissions.request'), 'Control Center companion requests optional host access explicitly');
+  check(!/method\s*:\s*['\"]POST['\"]/i.test(source), 'Control Center companion contains no POST mutation path');
+  check(!/\/tasks\//.test(source), 'Control Center companion does not call task mutation endpoints');
+}
 
 // 4. Popup files
 const popupHtml = path.join(rootDir, 'popup', 'popup.html');
@@ -112,14 +136,12 @@ check(fs.existsSync(workspaceCss), 'Workspace CSS exists');
 const htmlFiles = [sidePanelHtml, popupHtml, optionsHtml, workspaceHtml];
 for (const file of htmlFiles) {
   const content = fs.readFileSync(file, 'utf8');
-  const hasInlineScript = /<script\b[^>]*>([\s\S]*?)<\/script>/gi.test(content) &&
-    !content.match(/<script\s+src="[^"]+"><\/script>/gi);
   const hasEventHandlers = /on(click|load|change|submit|input)\s*=/gi.test(content);
   check(!hasEventHandlers, `No inline event handlers in ${path.basename(file)}`);
 }
 
 // 11. No eval() in any extension JS
-const jsFiles = [swPath, fetchProxyJs, boosterJs, sidePanelJs, popupJs, optionsJs, workspaceJs];
+const jsFiles = [swPath, fetchProxyJs, boosterJs, sidePanelJs, controlCenterJs, popupJs, optionsJs, workspaceJs];
 for (const file of jsFiles) {
   const content = fs.readFileSync(file, 'utf8');
   check(!/\beval\s*\(/.test(content), `No eval() usage in ${path.basename(file)}`);
